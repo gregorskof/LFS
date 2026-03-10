@@ -1,0 +1,927 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Fleet Commander: The Last Armada – Skirmish</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <style>
+/* ── select optgroup polish ─────────────────────────────── */
+select { background:#080f1e; color:#e8eefc; border:1px solid rgba(40,70,160,0.5); border-radius:6px; padding:4px 6px; font-family:inherit; }
+select optgroup { font-weight:700; font-size:11px; color:#5aa7ff; background:#080f1e; letter-spacing:.5px; }
+select option   { color:#e8eefc; background:#0c1528; padding:3px 6px; font-size:12px; }
+
+/* ── Ship Docs Modal ────────────────────────────────────── */
+#sdModal {
+  display:none; position:fixed; inset:0; z-index:9000;
+  background:rgba(2,5,14,0.88); backdrop-filter:blur(6px);
+  align-items:flex-start; justify-content:center;
+  overflow-y:auto; padding:20px 10px 40px;
+}
+#sdModal.open { display:flex; }
+.sd-shell {
+  width:min(1120px,96vw);
+  background:linear-gradient(180deg,#090f22 0%,#050810 100%);
+  border:1px solid rgba(50,80,180,0.5);
+  border-radius:12px;
+  box-shadow:0 28px 90px rgba(0,0,0,0.85), 0 0 0 1px rgba(90,150,255,0.06);
+  display:flex; flex-direction:column; min-height:min(90vh,820px);
+}
+.sd-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:14px 20px; border-bottom:1px solid rgba(30,55,110,0.55);
+  flex-shrink:0;
+}
+.sd-hdr h2 { margin:0; font-size:16px; color:#cce4ff; letter-spacing:.4px; }
+.sd-close {
+  background:none; border:1px solid rgba(80,110,200,0.35); color:#7899cc;
+  border-radius:6px; padding:4px 14px; cursor:pointer; font-family:inherit; font-size:13px;
+  transition:.15s;
+}
+.sd-close:hover { background:rgba(90,120,200,0.14); color:#aaccff; }
+.sd-tabs {
+  display:flex; gap:2px; padding:8px 16px 0; border-bottom:1px solid rgba(28,48,100,0.5);
+  flex-shrink:0;
+}
+.sd-tab {
+  background:none; border:none; border-bottom:2px solid transparent;
+  color:#7888aa; padding:7px 16px; cursor:pointer; font-size:12px; font-family:inherit;
+  letter-spacing:.3px; border-radius:6px 6px 0 0; transition:.15s;
+}
+.sd-tab:hover { color:#aaccff; background:rgba(90,120,200,0.08); }
+.sd-tab.on { color:#5aa7ff; border-bottom-color:#5aa7ff; background:rgba(90,150,255,0.07); }
+.sd-body { flex:1; padding:16px 20px 20px; overflow:auto; }
+
+/* faction chips */
+.chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:14px; }
+.chip {
+  padding:4px 11px; border-radius:99px; font-size:10px; cursor:pointer;
+  border:1px solid; transition:.15s; letter-spacing:.3px; font-weight:600;
+  user-select:none;
+}
+.chip.dim { opacity:.35; }
+
+/* browse grid */
+.ship-grid {
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(200px,1fr));
+  gap:10px;
+}
+.scard {
+  background:rgba(9,16,38,0.75); border:1px solid rgba(28,52,110,0.5);
+  border-radius:8px; padding:11px; cursor:pointer; transition:.18s; position:relative;
+}
+.scard:hover { border-color:rgba(90,150,255,0.55); transform:translateY(-2px); box-shadow:0 6px 22px rgba(0,0,0,0.4); }
+.scard.sel { border-color:#5aa7ff; box-shadow:0 0 0 1px rgba(90,150,255,.25); }
+.scard-faction { font-size:9px; text-transform:uppercase; letter-spacing:.7px; color:#445566; margin-bottom:5px; }
+.scard-img { width:100%; height:80px; object-fit:contain; filter:drop-shadow(0 0 6px rgba(90,150,255,0.25)); margin-bottom:7px; display:block; }
+.scard-noimg { width:100%; height:80px; display:flex; align-items:center; justify-content:center; font-size:26px; opacity:.3; margin-bottom:7px; }
+.scard-name { font-size:11px; font-weight:700; color:#cce4ff; margin-bottom:3px; line-height:1.35; }
+.scard-role { font-size:10px; color:#445566; }
+.scard-ps { position:absolute; top:8px; right:8px; font-size:10px; font-weight:700; padding:2px 6px; border-radius:99px; background:rgba(0,0,0,0.55); }
+
+/* detail layout */
+.det-grid { display:grid; grid-template-columns:260px 1fr; gap:18px; }
+.det-left { display:flex; flex-direction:column; gap:12px; }
+.det-imgbox {
+  background:rgba(7,12,28,0.8); border:1px solid rgba(28,52,110,0.45);
+  border-radius:8px; padding:14px; text-align:center;
+}
+.det-img { max-width:190px; max-height:150px; object-fit:contain; filter:drop-shadow(0 0 14px rgba(90,150,255,0.38)); }
+.det-noimg { height:150px; display:flex; align-items:center; justify-content:center; font-size:56px; opacity:.3; }
+.det-name { font-size:15px; font-weight:700; margin-top:9px; }
+.det-sub { font-size:11px; color:#7888aa; margin-top:2px; }
+.stat-box {
+  background:rgba(7,12,28,0.8); border:1px solid rgba(28,52,110,0.4);
+  border-radius:8px; padding:11px;
+}
+.stat-box h4 { margin:0 0 8px; font-size:9px; text-transform:uppercase; letter-spacing:.8px; color:#5aa7ff; }
+.sr { display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; }
+.sl { font-size:11px; color:#7888aa; }
+.sv { font-size:11px; color:#cce4ff; font-weight:600; font-family:ui-monospace,monospace; }
+.bar-wrap { height:4px; background:rgba(255,255,255,0.06); border-radius:99px; margin-bottom:5px; overflow:hidden; }
+.bar-fill { height:100%; border-radius:99px; }
+.pc-box { display:flex; gap:10px; margin-top:6px; }
+.pros, .cons {
+  flex:1; border-radius:6px; padding:9px; font-size:10px; line-height:1.65;
+}
+.pros { background:rgba(28,160,90,0.07); border:1px solid rgba(28,160,90,0.2); }
+.cons { background:rgba(210,45,45,0.07); border:1px solid rgba(210,45,45,0.2); }
+.pros h5 { color:#3ddc97; margin:0 0 5px; font-size:9px; text-transform:uppercase; letter-spacing:.6px; }
+.cons h5 { color:#ff5b5b; margin:0 0 5px; font-size:9px; text-transform:uppercase; letter-spacing:.6px; }
+.pros li,.cons li { color:#99aabf; margin-bottom:1px; }
+
+/* weapon / hangar tables */
+.wtbl, .htbl { width:100%; border-collapse:collapse; font-size:11px; }
+.wtbl th, .htbl th {
+  text-align:left; padding:5px 7px;
+  font-size:9px; text-transform:uppercase; letter-spacing:.7px; color:#5aa7ff;
+  border-bottom:1px solid rgba(28,52,110,0.5); font-weight:600;
+}
+.wtbl td, .htbl td { padding:5px 7px; border-bottom:1px solid rgba(18,32,65,0.4); }
+.wtbl tr:last-child td,.htbl tr:last-child td { border-bottom:none; }
+.wtbl tr:hover td,.htbl tr:hover td { background:rgba(90,150,255,0.04); }
+.badge { font-size:9px; padding:2px 5px; border-radius:99px; font-weight:700; letter-spacing:.3px; }
+.b-ion    { background:rgba(50,140,255,0.15); color:#55ccff; }
+.b-plasma { background:rgba(255,120,30,0.15); color:#ff9944; }
+.b-kin    { background:rgba(170,190,210,0.10); color:#aabbcc; }
+.b-spec   { background:rgba(170,70,255,0.15); color:#cc88ff; }
+.star     { color:#cc88ff; }
+.shdr { font-size:10px; text-transform:uppercase; letter-spacing:.8px; color:#5aa7ff; margin:14px 0 7px; font-weight:600; }
+
+/* compare */
+.cmp-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.cmp-slot { background:rgba(7,12,28,0.8); border:1px solid rgba(28,52,110,0.45); border-radius:8px; padding:14px; }
+.cmp-sel {
+  width:100%; background:#0c1528; border:1px solid rgba(38,65,150,0.5);
+  color:#e8eefc; border-radius:6px; padding:6px 8px; font-size:12px; font-family:inherit; margin-bottom:12px;
+}
+.cmp-img { max-height:100px; max-width:180px; object-fit:contain; display:block; margin:0 auto 8px; }
+.cmp-title { font-size:14px; font-weight:700; text-align:center; margin-bottom:2px; }
+.cmp-sub { font-size:11px; color:#7888aa; text-align:center; margin-bottom:10px; }
+.nosel { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:120px; color:#334466; font-size:12px; gap:6px; }
+.nosel .ni { font-size:32px; opacity:.3; }
+
+/* power chart */
+.pw-block { margin-bottom:18px; }
+.pw-ftitle { font-size:12px; font-weight:700; margin-bottom:8px; letter-spacing:.3px; }
+.pw-row { display:flex; align-items:center; gap:10px; margin-bottom:4px; }
+.pw-name { width:210px; font-size:11px; color:#99aabf; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pw-outer { flex:1; height:15px; background:rgba(255,255,255,0.05); border-radius:4px; overflow:hidden; position:relative; }
+.pw-fill { height:100%; border-radius:4px; }
+.pw-val { position:absolute; right:5px; top:50%; transform:translateY(-50%); font-size:9px; font-weight:700; color:rgba(255,255,255,0.65); font-family:ui-monospace,monospace; }
+
+/* ── Fleet Roster spreadsheet ─────────────────────────────── */
+.roster-wrap { padding-bottom:20px; }
+.roster-intro { font-size:11px; color:#556688; margin:0 0 12px; line-height:1.6; }
+.roster-sort-row { display:flex; gap:7px; align-items:center; flex-wrap:wrap; margin-bottom:14px; }
+.roster-sort-row label { font-size:10px; color:#7888aa; margin-right:2px; }
+.rsb { background:none; border:1px solid rgba(40,70,160,0.38); color:#7888aa;
+  border-radius:4px; padding:3px 9px; font-size:10px; cursor:pointer; font-family:inherit; transition:.12s; }
+.rsb:hover,.rsb.on { border-color:#5aa7ff; color:#c8dfff; background:rgba(90,150,255,0.10); }
+.roster-faction { margin-bottom:26px; }
+.rfhdr { font-size:12px; font-weight:700; padding:6px 12px; border-radius:6px 6px 0 0;
+  border:1px solid; border-bottom:none; letter-spacing:.35px; }
+.roster-tbl { width:100%; border-collapse:collapse; font-size:10.5px;
+  border:1px solid rgba(22,46,110,0.50); border-top:none; }
+.roster-tbl th { text-align:left; padding:5px 8px; font-size:9px; text-transform:uppercase;
+  letter-spacing:.65px; color:#5aa7ff; background:rgba(6,12,30,0.95);
+  border-bottom:1px solid rgba(30,60,150,0.55); white-space:nowrap; font-weight:700; }
+.roster-tbl th.r { text-align:right; }
+.roster-tbl td { padding:5px 8px; border-bottom:1px solid rgba(14,26,58,0.40); white-space:nowrap; vertical-align:middle; }
+.roster-tbl tr:last-child td { border-bottom:none; }
+.roster-tbl tr:hover td { background:rgba(90,150,255,0.04); }
+.rnum { font-family:ui-monospace,monospace; text-align:right; }
+.rbar { display:inline-block; width:54px; height:4px; border-radius:99px;
+  background:rgba(255,255,255,0.06); vertical-align:middle; margin-left:5px; overflow:hidden; }
+.rbar-fill { height:100%; border-radius:99px; }
+.rtag { font-size:8.5px; text-transform:uppercase; letter-spacing:.5px; opacity:.60; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <div class="dot"></div>
+    <div>
+      <div class="title">Fleet Commander: The Last Armada</div>
+      <div class="subtitle">Skirmish Mode</div>
+    </div>
+  </div>
+  <div class="top-controls">
+    <button id="btnStart" class="btn btn-primary">Start Battle</button>
+    <button id="btnPause" class="btn">Pause</button>
+    <button id="btnReset" class="btn btn-danger">Reset</button>
+    <button id="btnQuick" class="btn btn-primary">Quick Battle</button>
+    <div class="sound">
+      <button id="btnSound" class="btn">Sound: On</button>
+      <span style="font-size:10px;color:#556688;margin-left:2px">SFX</span>
+      <input id="soundVol" type="range" min="0" max="1" step="0.01" value="0.35" title="SFX volume"/>
+      <span style="font-size:10px;color:#556688;margin-left:6px">🎵</span>
+      <input id="musicVol" type="range" min="0" max="1" step="0.01" value="0.26" title="Music volume"/>
+    </div>
+    <button id="btnShipDocs" class="btn" style="background:rgba(90,150,255,.12);border-color:rgba(90,150,255,.4);color:#5aa7ff;font-weight:600;">📖 Ship Docs</button>
+    <div class="sep"></div>
+    <div class="hint">
+      <span class="kbd">LMB</span> select · <span class="kbd">Drag</span> box · <span class="kbd">RMB</span> move ·
+      <span class="kbd">A</span>+<span class="kbd">RMB</span> attack-move · <span class="kbd">T</span>+<span class="kbd">LMB</span> focus ·
+      <span class="kbd">W</span>+<span class="kbd">RMB</span> warp · <span class="kbd">R</span> repair · <span class="kbd">E</span> scatter ·
+      <span class="kbd">±</span> speed · <span class="kbd">Wheel</span> zoom
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <aside class="panel">
+    <section class="section">
+      <h2>Spawn</h2>
+      <div class="row">
+        <label>Player</label>
+        <select id="playerFaction">
+          <option value="republic">Grand Republic</option>
+          <option value="empire">Grand Empire</option>
+          <option value="remnant">Imperial Remnant</option>
+          <option value="csn">CSN</option>
+          <option value="ngr">New Grand Republic</option>
+          <option value="starwars">Star Wars</option>
+          <option value="fsa">Five Star Alignment</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Faction</label>
+        <select id="spawnFaction">
+          <option value="republic">Grand Republic</option>
+          <option value="empire">Grand Empire</option>
+          <option value="remnant">Imperial Remnant</option>
+          <option value="csn">CSN</option>
+          <option value="ngr">New Grand Republic</option>
+          <option value="starwars">Star Wars</option>
+          <option value="fsa">Five Star Alignment</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Unit</label>
+        <select id="spawnType"></select>
+      </div>
+      <div class="row">
+        <label>Count</label>
+        <input id="spawnCount" type="number" min="1" max="50" value="1"/>
+      </div>
+      <div class="note">Click empty space to place. <b>Shift</b>+Click forces placement. Hover ship for full weapon &amp; hangar specs.</div>
+    </section>
+    <section class="section">
+      <h2>Selection</h2>
+      <div class="row">
+        <label>Formation</label>
+        <select id="formation">
+          <option value="line">Line (Vertical)</option>
+          <option value="line_h">Line (Horizontal)</option>
+          <option value="wedge">Wedge</option>
+          <option value="ring">Ring</option>
+          <option value="wall">Wall</option>
+          <option value="echelon">Echelon</option>
+        </select>
+      </div>
+      <div class="row">
+        <label>Rules</label>
+        <div class="toggles">
+          <button id="btnHold" class="btn">Hold Fire (H)</button>
+          <button id="btnFree" class="btn">Free Fire (F)</button>
+        </div>
+      </div>
+      <div class="row">
+        <label>Tools</label>
+        <div class="toggles">
+          <button id="btnDelete" class="btn btn-danger">Delete (Del)</button>
+          <button id="btnDeselect" class="btn">Deselect (Esc)</button>
+        </div>
+      </div>
+    </section>
+    <section class="section">
+      <h2>Scenario</h2>
+      <div class="row">
+        <button id="btnExport" class="btn">Export JSON</button>
+        <button id="btnImport" class="btn">Import JSON</button>
+      </div>
+      <textarea id="scenarioBox" spellcheck="false" placeholder="Scenario JSON appears here…"></textarea>
+    </section>
+    <section class="section">
+      <h2>Status</h2>
+      <div id="status" class="status"></div>
+    </section>
+  </aside>
+  <section class="stage">
+    <canvas id="game"></canvas>
+    <div id="overlay" class="overlay hidden">
+      <div class="overlay-card">
+        <div id="overlayTitle" class="overlay-title">Victory</div>
+        <div id="overlayText" class="overlay-text"></div>
+        <div class="overlay-actions">
+          <button id="btnDownloadCSV" class="btn">Download CSV</button>
+          <button id="btnPlayAgain" class="btn btn-primary">Play Again</button>
+          <button id="btnCloseOverlay" class="btn">Close</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ═══════════════ SHIP DOCS MODAL ═══════════════════════ -->
+<div id="sdModal">
+  <div class="sd-shell">
+    <div class="sd-hdr">
+      <h2>📖 Fleet Intelligence — Ship Database</h2>
+      <button class="sd-close" id="sdClose">✕ Close</button>
+    </div>
+    <div class="sd-tabs" id="sdTabs">
+      <button class="sd-tab on" data-tab="browse">Browse</button>
+      <button class="sd-tab" data-tab="detail">Ship Detail</button>
+      <button class="sd-tab" data-tab="compare">Compare</button>
+      <button class="sd-tab" data-tab="power">Power Rankings</button>
+      <button class="sd-tab" data-tab="roster">📋 Fleet Roster</button>
+    </div>
+    <div class="sd-body" id="sdBody"><p style="color:#445566;padding:30px">Loading…</p></div>
+  </div>
+</div>
+
+<script src="game.js"></script>
+<script>
+(function(){
+'use strict';
+const modal  = document.getElementById('sdModal');
+const body   = document.getElementById('sdBody');
+const tabs   = document.getElementById('sdTabs');
+let curTab   = 'browse';
+let fFilter  = 'all';
+let detKey   = null;
+let cmpA     = null;
+let cmpB     = null;
+let D        = null;  // window.SHIP_DOCS reference
+
+document.getElementById('btnShipDocs').addEventListener('click', () => {
+  D = window.SHIP_DOCS || null;
+  modal.classList.add('open');
+  go(curTab);
+});
+document.getElementById('sdClose').addEventListener('click', () => modal.classList.remove('open'));
+modal.addEventListener('click', e => { if (e.target === modal) modal.classList.remove('open'); });
+
+tabs.addEventListener('click', e => {
+  const t = e.target.closest('.sd-tab');
+  if (!t) return;
+  tabs.querySelectorAll('.sd-tab').forEach(b => b.classList.toggle('on', b === t));
+  curTab = t.dataset.tab;
+  go(curTab);
+});
+
+function switchTab(name){
+  curTab = name;
+  tabs.querySelectorAll('.sd-tab').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  go(name);
+}
+
+function go(tab){
+  if (!D){ body.innerHTML='<p style="color:#ff5b5b;padding:20px">Game not loaded yet — open in browser.</p>'; return; }
+  if (tab === 'browse')  renderBrowse();
+  else if (tab === 'detail')  renderDetail();
+  else if (tab === 'compare') renderCompare();
+  else if (tab === 'power')   renderPower();
+  else if (tab === 'roster')  renderRoster();
+}
+
+// ── Power score ─────────────────────────────────────────────
+function ps(def){
+  if (!def) return 0;
+  const MULT = { ion:1.0, plasma:1.15, kinetic:0.8 };
+  let dps = 0;
+  for (const w of (def.weapons||[])){
+    const boost = (w.pierceShields||w.breachShields) ? 1.55 : 1.0;
+    const uses  = w.usesMax ? 0.4 : 1.0;
+    dps += (w.dmg / w.cooldown) * (MULT[w.type]||1) * boost * uses;
+  }
+  const ehp     = (def.shields||0)*1.2 + (def.hull||0);
+  const mobBonus= Math.min((def.speed||0)*0.8, 120);
+  const massSc  = Math.log10((def.mass||1)+10) * 38;
+  const hangar  = D.hangars[def.key] ? D.hangars[def.key].reduce((a,s)=>a+s.max*0.35,0) : 0;
+  // Air station hangar bonus
+  const asHangar = (def.key==='air_station') ? D.airStationHangar.reduce((a,s)=>a+s.max*0.35,0) : 0;
+  return Math.round(ehp*0.018 + dps*12 + mobBonus + massSc + hangar + asHangar);
+}
+
+function pcolor(score, max){
+  const f = score / (max||1);
+  return f>0.8?'#ff5b5b': f>0.6?'#ff9944': f>0.4?'#ffcc33': f>0.2?'#3ddc97': '#5aa7ff';
+}
+
+function fcolor(fid){
+  const t = D.factions[fid]?.tint || [140,160,200];
+  return `rgb(${t[0]},${t[1]},${t[2]})`;
+}
+
+function imgSrc(def){
+  // Use the same PNG files the game already loads — no separate images/docs/ folder needed.
+  // D.assets maps spriteKey → filename (e.g. 'repDread' → 'Republican Dreadnought.png')
+  if (def.spriteKey && D.assets && D.assets[def.spriteKey]){
+    return encodeURI(D.assets[def.spriteKey]);
+  }
+  return '';   // no sprite → onerror hides the img, fallback emoji shows
+}
+
+function imgEl(def, cls, wh){
+  const src = imgSrc(def);
+  return `<img class="${cls}" src="${src}" alt="${def.name}" style="${wh?`max-width:${wh}px;max-height:${wh}px;`:''}"
+    onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+    <div class="${cls.replace('-img','-noimg')}" style="display:none">🛸</div>`;
+}
+
+function hangarForShip(def){
+  // air_station is faction-specific in game; for docs we show the republic version as representative
+  if (def.key === 'air_station') return D.airStationHangar;
+  return D.hangars[def.key] || null;
+}
+
+function prosCons(def){
+  const pros=[], cons=[];
+  const MULT={ion:1.0,plasma:1.15,kinetic:0.8};
+  const dps=(def.weapons||[]).reduce((s,w)=>{
+    return s+(w.dmg/w.cooldown)*(MULT[w.type]||1)*((w.pierceShields||w.breachShields)?1.55:1)*(w.usesMax?0.4:1);
+  },0);
+  const ehp=(def.shields||0)*1.2+(def.hull||0);
+  const maxRng=Math.max(...(def.weapons||[]).map(w=>w.range||0),0);
+  const hasHangar=!!(hangarForShip(def)?.length);
+  const hasSW=(def.weapons||[]).some(w=>w.special);
+
+  if ((def.speed||0)>=150) pros.push('Very high speed');
+  else if ((def.speed||0)>=90) pros.push('Good mobility');
+  else if ((def.speed||0)<30) cons.push('Very slow');
+
+  if (ehp>15000) pros.push('Extremely durable');
+  else if (ehp>5000) pros.push('High survivability');
+  else if (ehp<400) cons.push('Very fragile');
+  else if (ehp<1200) cons.push('Low durability');
+
+  if (dps>200) pros.push('Devastating firepower');
+  else if (dps>70) pros.push('Strong damage output');
+  else if (dps<10) cons.push('Minimal firepower');
+  else if (dps<22) cons.push('Low DPS');
+
+  if (maxRng>900) pros.push('Extreme weapon range');
+  else if (maxRng>600) pros.push('Good engagement range');
+  else if (maxRng<280) cons.push('Short weapon range');
+
+  if (hasSW) pros.push('Superweapon capable');
+  if (hasHangar){
+    const total=(hangarForShip(def)||[]).reduce((s,h)=>s+h.max,0);
+    pros.push(`Launches up to ${total.toLocaleString()} craft`);
+  }
+  if (def.traits?.stealth) pros.push('Stealth capable');
+  if ((def.weapons||[]).some(w=>w.pierceShields)) pros.push('Shield-piercing weapons');
+  const ionC=(def.weapons||[]).filter(w=>w.type==='ion').length;
+  if (ionC>=2) pros.push('Strong anti-shield armament');
+  const plasmaC=(def.weapons||[]).filter(w=>w.type==='plasma').length;
+  if (plasmaC>=3) pros.push('Heavy anti-hull armament');
+  if (!hasSW&&!hasHangar&&dps<35&&ehp<1800) cons.push('Limited solo impact');
+  return { pros:pros.slice(0,5), cons:cons.slice(0,5) };
+}
+
+// ── BROWSE ──────────────────────────────────────────────────
+function renderBrowse(){
+  const {units, factions, loadouts} = D;
+  const allScores = units.map(d=>ps(d));
+  const maxS = Math.max(...allScores,1);
+
+  // Chips
+  let h = '<div class="chips">';
+  h += `<span class="chip${fFilter==='all'?'':' dim'}" data-f="all" style="border-color:#334466;color:#7888aa;background:rgba(28,48,100,0.18)">All Factions</span>`;
+  for (const [fid,f] of Object.entries(factions)){
+    const col=fcolor(fid);
+    h += `<span class="chip${fFilter===fid||fFilter==='all'?'':' dim'}" data-f="${fid}"
+      style="border-color:${col};color:${col};background:rgba(${f.tint[0]},${f.tint[1]},${f.tint[2]},0.1)">${f.name}</span>`;
+  }
+  h += '</div>';
+
+  // Deduplicated ordered list from loadouts
+  const seen=new Set(); const list=[];
+  for (const [fid,keys] of Object.entries(loadouts)){
+    for (const key of keys){
+      if (seen.has(key)) continue; seen.add(key);
+      const def=units.find(u=>u.key===key);
+      if (def) list.push({def,fid});
+    }
+  }
+
+  h += '<div class="ship-grid">';
+  for (const {def,fid} of list){
+    const f=factions[fid]; if (!f) continue;
+    if (fFilter!=='all' && fid!==fFilter) continue;
+    const score=ps(def), pc=pcolor(score,maxS), col=fcolor(fid);
+    h += `<div class="scard${detKey===def.key?' sel':''}" data-key="${def.key}" data-fid="${fid}">
+      <div class="scard-faction" style="color:${col}">${f.name}</div>
+      <img class="scard-img" src="${imgSrc(def)}" alt="${def.name}"
+        onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div class="scard-noimg" style="display:none">🛸</div>
+      <div class="scard-name">${def.name}</div>
+      <div class="scard-role">${def.role}${def.craft?' · '+def.craft:''}</div>
+      <div class="scard-ps" style="color:${pc}">${score}</div>
+    </div>`;
+  }
+  h += '</div>';
+  body.innerHTML = h;
+
+  body.querySelectorAll('.chip').forEach(c => {
+    c.addEventListener('click', () => { fFilter=c.dataset.f; renderBrowse(); });
+  });
+  body.querySelectorAll('.scard').forEach(c => {
+    c.addEventListener('click', () => {
+      detKey = c.dataset.key;
+      const def = D.units.find(u=>u.key===detKey);
+      const fid2 = c.dataset.fid;
+      if (def) showDetail(def,fid2);
+    });
+  });
+}
+
+// ── DETAIL ──────────────────────────────────────────────────
+function renderDetail(){
+  if (!detKey){ body.innerHTML='<div class="nosel"><div class="ni">🔍</div><div>Select a ship from the Browse tab</div></div>'; return; }
+  const def=D.units.find(u=>u.key===detKey);
+  const fid=Object.keys(D.loadouts).find(f=>D.loadouts[f].includes(detKey))||'republic';
+  if (def) showDetail(def,fid);
+}
+
+function showDetail(def,fid){
+  detKey=def.key;
+  const f=D.factions[fid]||Object.values(D.factions)[0];
+  const col=fcolor(fid), score=ps(def);
+  const allS=D.units.map(d=>ps(d)), maxS=Math.max(...allS,1);
+  const pc=pcolor(score,maxS);
+  const maxShields=Math.max(...D.units.map(d=>d.shields||0),1);
+  const maxHull=Math.max(...D.units.map(d=>d.hull||0),1);
+  const ehp=(def.shields||0)*1.2+(def.hull||0);
+
+  const MULT={ion:1.0,plasma:1.15,kinetic:0.8};
+  const dps=(def.weapons||[]).reduce((s,w)=>{
+    return s+(w.dmg/w.cooldown)*(MULT[w.type]||1)*((w.pierceShields||w.breachShields)?1.55:1)*(w.usesMax?0.4:1);
+  },0);
+
+  const {pros,cons}=prosCons(def);
+  const hangar=hangarForShip(def)||[];
+
+  // Weapon table
+  let wRows='';
+  for (const w of (def.weapons||[])){
+    const bc=w.special?'b-spec': w.type==='ion'?'b-ion': w.type==='plasma'?'b-plasma':'b-kin';
+    const dps2=(w.dmg/w.cooldown).toFixed(1);
+    const star=w.special?'<span class="star"> ★</span>':'';
+    const flags=[
+      w.pierceShields?'<span style="color:#cc88ff;font-size:9px">pierce</span>':'',
+      w.breachShields?'<span style="color:#ff7744;font-size:9px">breach</span>':'',
+    ].filter(Boolean).join(' ');
+    const uses=w.usesMax?`<span style="color:#cc88ff">${w.usesMax}</span>`:'—';
+    const windup=w.windup?`${w.windup}s`:'—';
+    wRows+=`<tr>
+      <td>${w.name}${star} ${flags}</td>
+      <td><span class="badge ${bc}">${w.type.toUpperCase()}</span></td>
+      <td style="font-family:ui-monospace,monospace">${w.dmg}</td>
+      <td style="font-family:ui-monospace,monospace">${dps2}</td>
+      <td style="font-family:ui-monospace,monospace">${Math.round(w.range)}</td>
+      <td style="font-family:ui-monospace,monospace">${Math.round(w.pSpeed)}</td>
+      <td style="font-family:ui-monospace,monospace">${w.cooldown}s</td>
+      <td>${windup}</td>
+      <td>${uses}</td>
+    </tr>`;
+  }
+
+  // Hangar table
+  let hRows='';
+  if (hangar.length){
+    for (const slot of hangar){
+      const cd=D.units.find(u=>u.key===slot.craftKey);
+      const nm=cd?cd.name:slot.craftKey;
+      hRows+=`<tr>
+        <td>${nm}</td>
+        <td style="color:#66ffcc;font-weight:700;font-family:ui-monospace,monospace">${slot.max.toLocaleString()}</td>
+        <td style="font-family:ui-monospace,monospace">${slot.wave} per wave</td>
+      </tr>`;
+    }
+  }
+
+  const html = `<div class="det-grid">
+    <div class="det-left">
+      <div class="det-imgbox">
+        <img class="det-img" src="${imgSrc(def)}" alt="${def.name}"
+          onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="det-noimg" style="display:none">🛸</div>
+        <div class="det-name" style="color:${col}">${def.name}</div>
+        <div class="det-sub">${f.name} · ${def.role}${def.craft?' · '+def.craft:''}</div>
+      </div>
+      <div class="stat-box">
+        <h4>Combat Stats</h4>
+        <div class="sr"><span class="sl">Power Score</span><span class="sv" style="color:${pc};font-size:15px">${score}</span></div>
+        <div class="sr"><span class="sl">Shields</span><span class="sv" style="color:#5aa7ff">${def.shields||0}</span></div>
+        <div class="bar-wrap"><div class="bar-fill" style="width:${Math.round((def.shields||0)/maxShields*100)}%;background:linear-gradient(90deg,#1a44aa,#5aa7ff)"></div></div>
+        <div class="sr"><span class="sl">Hull</span><span class="sv" style="color:#3ddc97">${def.hull||0}</span></div>
+        <div class="bar-wrap"><div class="bar-fill" style="width:${Math.round((def.hull||0)/maxHull*100)}%;background:linear-gradient(90deg,#1a6640,#3ddc97)"></div></div>
+        <div class="sr"><span class="sl">EHP (weighted)</span><span class="sv">${Math.round(ehp).toLocaleString()}</span></div>
+        <div class="sr"><span class="sl">Est. DPS</span><span class="sv">${dps.toFixed(1)}</span></div>
+        <div class="sr"><span class="sl">Speed</span><span class="sv">${def.speed||0}</span></div>
+        <div class="sr"><span class="sl">Mass</span><span class="sv">${(def.mass||0).toLocaleString()}</span></div>
+        <div class="sr"><span class="sl">Radius</span><span class="sv">${def.r||0}</span></div>
+      </div>
+      <div class="stat-box">
+        <h4>Assessment</h4>
+        <div class="pc-box">
+          <div class="pros"><h5>Strengths</h5><ul style="margin:0;padding-left:14px">
+            ${pros.length?pros.map(p=>`<li>${p}</li>`).join(''):'<li style="color:#445566">Balanced</li>'}
+          </ul></div>
+          <div class="cons"><h5>Weaknesses</h5><ul style="margin:0;padding-left:14px">
+            ${cons.length?cons.map(c=>`<li>${c}</li>`).join(''):'<li style="color:#445566">None notable</li>'}
+          </ul></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="shdr">Weapon Systems</div>
+      <div style="overflow-x:auto">
+        <table class="wtbl">
+          <thead><tr>
+            <th>Name</th><th>Type</th><th>Dmg</th><th>DPS</th>
+            <th>Range</th><th>Proj Spd</th><th>Cooldown</th><th>Windup</th><th>Uses</th>
+          </tr></thead>
+          <tbody>${wRows||'<tr><td colspan="9" style="color:#445566">No weapons</td></tr>'}</tbody>
+        </table>
+      </div>
+      ${hangar.length?`
+      <div class="shdr">Hangar Complement</div>
+      <table class="htbl">
+        <thead><tr><th>Craft Type</th><th>Max (lifetime)</th><th>Wave Size</th></tr></thead>
+        <tbody>${hRows}</tbody>
+      </table>`:''}
+    </div>
+  </div>`;
+
+  if (curTab === 'detail'){
+    body.innerHTML = html;
+  } else {
+    switchTab('detail');
+    body.innerHTML = html;
+  }
+}
+
+// ── COMPARE ─────────────────────────────────────────────────
+function renderCompare(){
+  function buildSel(val, slot){
+    let o='<option value="">— Select a ship —</option>';
+    const seen=new Set();
+    for (const [fid,keys] of Object.entries(D.loadouts)){
+      const f=D.factions[fid]; if(!f) continue;
+      o+=`<optgroup label="${f.name}">`;
+      for (const key of keys){
+        if (seen.has(key)) continue; seen.add(key);
+        const def=D.units.find(u=>u.key===key); if(!def) continue;
+        o+=`<option value="${key}"${val===key?' selected':''}>${def.name}</option>`;
+      }
+      o+='</optgroup>';
+    }
+    return `<select class="cmp-sel" data-slot="${slot}">${o}</select>`;
+  }
+
+  function card(key){
+    if (!key) return `<div class="nosel"><div class="ni">🛸</div><div>Select a ship above</div></div>`;
+    const def=D.units.find(u=>u.key===key); if(!def) return '';
+    const fid=Object.keys(D.loadouts).find(f=>D.loadouts[f].includes(key))||'republic';
+    const f=D.factions[fid]||Object.values(D.factions)[0];
+    const col=fcolor(fid), score=ps(def);
+    const allS=D.units.map(d=>ps(d)), maxS=Math.max(...allS,1);
+    const pc=pcolor(score,maxS);
+    const {pros,cons}=prosCons(def);
+    const MULT={ion:1.0,plasma:1.15,kinetic:0.8};
+    const dps=(def.weapons||[]).reduce((s,w)=>{
+      return s+(w.dmg/w.cooldown)*(MULT[w.type]||1)*((w.pierceShields||w.breachShields)?1.55:1)*(w.usesMax?0.4:1);
+    },0);
+    const ehp=(def.shields||0)*1.2+(def.hull||0);
+    return `
+      <img class="cmp-img" src="${imgSrc(def)}" alt="${def.name}"
+        onerror="this.style.display='none'" style="filter:drop-shadow(0 0 10px ${col}55)">
+      <div class="cmp-title" style="color:${col}">${def.name}</div>
+      <div class="cmp-sub">${f.name} · ${def.role}</div>
+      <div class="stat-box" style="margin-bottom:10px">
+        <div class="sr"><span class="sl">Power Score</span><span class="sv" style="color:${pc};font-size:16px">${score}</span></div>
+        <div class="sr"><span class="sl">Shields</span><span class="sv" style="color:#5aa7ff">${def.shields||0}</span></div>
+        <div class="sr"><span class="sl">Hull</span><span class="sv" style="color:#3ddc97">${def.hull||0}</span></div>
+        <div class="sr"><span class="sl">EHP</span><span class="sv">${Math.round(ehp).toLocaleString()}</span></div>
+        <div class="sr"><span class="sl">Est. DPS</span><span class="sv">${dps.toFixed(1)}</span></div>
+        <div class="sr"><span class="sl">Speed</span><span class="sv">${def.speed||0}</span></div>
+        <div class="sr"><span class="sl">Weapons</span><span class="sv">${(def.weapons||[]).length}</span></div>
+      </div>
+      <div class="pc-box">
+        <div class="pros"><h5>Strengths</h5><ul style="margin:0;padding-left:14px">
+          ${pros.length?pros.map(p=>`<li>${p}</li>`).join(''):'<li style="color:#445566">Balanced</li>'}
+        </ul></div>
+        <div class="cons"><h5>Weaknesses</h5><ul style="margin:0;padding-left:14px">
+          ${cons.length?cons.map(c=>`<li>${c}</li>`).join(''):'<li style="color:#445566">None notable</li>'}
+        </ul></div>
+      </div>`;
+  }
+
+  body.innerHTML = `
+    <p class="shdr" style="margin-top:0">Select two ships for a head-to-head comparison</p>
+    <div class="cmp-grid">
+      <div class="cmp-slot"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:#445566;margin-bottom:8px">Ship A</div>
+        ${buildSel(cmpA,'A')}${card(cmpA)}</div>
+      <div class="cmp-slot"><div style="font-size:10px;text-transform:uppercase;letter-spacing:.7px;color:#445566;margin-bottom:8px">Ship B</div>
+        ${buildSel(cmpB,'B')}${card(cmpB)}</div>
+    </div>`;
+
+  body.querySelectorAll('.cmp-sel').forEach(s=>{
+    s.addEventListener('change',()=>{
+      if(s.dataset.slot==='A') cmpA=s.value||null;
+      else cmpB=s.value||null;
+      renderCompare();
+    });
+  });
+}
+
+// ── POWER RANKINGS ───────────────────────────────────────────
+function renderPower(){
+  const allScores = D.units.map(d=>({def:d,score:ps(d)}));
+  const maxS = Math.max(...allScores.map(x=>x.score),1);
+
+  let h = '<p class="shdr" style="margin-top:0">Score = EHP × 0.018 + DPS × 12 + mobility + mass + hangar capacity</p>';
+
+  // Per-faction blocks
+  for (const [fid,f] of Object.entries(D.factions)){
+    const keys=D.loadouts[fid]||[];
+    const ships=keys.map(k=>{
+      const def=D.units.find(u=>u.key===k); if(!def) return null;
+      return {def, score:ps(def)};
+    }).filter(Boolean).sort((a,b)=>b.score-a.score);
+    if (!ships.length) continue;
+    const col=fcolor(fid);
+    h+=`<div class="pw-block"><div class="pw-ftitle" style="color:${col}">${f.name}</div>`;
+    for (const {def,score} of ships){
+      const pct=Math.round(score/maxS*100), pc=pcolor(score,maxS);
+      h+=`<div class="pw-row">
+        <div class="pw-name" title="${def.name}">${def.name}</div>
+        <div class="pw-outer">
+          <div class="pw-fill" style="width:${pct}%;background:linear-gradient(90deg,${pc}44,${pc})"></div>
+          <div class="pw-val">${score.toLocaleString()}</div>
+        </div>
+      </div>`;
+    }
+    h+='</div>';
+  }
+
+  // Top 10 cross-faction
+  const top10=[...allScores].sort((a,b)=>b.score-a.score).slice(0,10);
+  h+=`<div class="pw-block"><div class="pw-ftitle" style="color:#cc88ff">⭐ Overall Top 10</div>`;
+  for (const {def,score} of top10){
+    const fid2=Object.keys(D.loadouts).find(f2=>D.loadouts[f2].includes(def.key))||'';
+    const f2=D.factions[fid2];
+    const col2=f2?fcolor(fid2):'#aabbcc';
+    const pct=Math.round(score/maxS*100), pc=pcolor(score,maxS);
+    h+=`<div class="pw-row">
+      <div class="pw-name" title="${def.name}"><span style="color:${col2};font-size:9px">[${f2?.name||''}]</span> ${def.name}</div>
+      <div class="pw-outer">
+        <div class="pw-fill" style="width:${pct}%;background:linear-gradient(90deg,${pc}44,${pc})"></div>
+        <div class="pw-val">${score.toLocaleString()}</div>
+      </div>
+    </div>`;
+  }
+  h+='</div>';
+  body.innerHTML=h;
+}
+
+// ── FLEET ROSTER SPREADSHEET ────────────────────────────────
+let rSort = 'ps';   // active sort column key
+let rDir  = -1;     // -1=desc  +1=asc
+
+function renderRoster(){
+  const MULT = {ion:1.0, plasma:1.15, kinetic:0.8};
+
+  function dps(def){
+    return (def.weapons||[]).reduce((s,w)=>{
+      const boost = (w.pierceShields||w.breachShields)?1.55:1;
+      return s + (w.dmg/w.cooldown)*(MULT[w.type]||1)*boost*(w.usesMax?0.4:1);
+    }, 0);
+  }
+  function ehp(def){ return (def.shields||0)*1.2+(def.hull||0); }
+  function maxRng(def){ return Math.max(...(def.weapons||[]).map(w=>w.range||0), 0); }
+
+  // Build global maxima for bar scaling (capital/escort/screen only — no craft)
+  const allCaps = D.units.filter(d=>d.role!=='craft');
+  const gMax = {
+    ps:      Math.max(...allCaps.map(d=>ps(d)), 1),
+    shields: Math.max(...allCaps.map(d=>d.shields||0), 1),
+    hull:    Math.max(...allCaps.map(d=>d.hull||0), 1),
+    ehp:     Math.max(...allCaps.map(d=>ehp(d)), 1),
+    dps:     Math.max(...allCaps.map(d=>dps(d)), 1),
+    range:   Math.max(...allCaps.map(d=>maxRng(d)), 1),
+    speed:   Math.max(...allCaps.map(d=>d.speed||0), 1),
+    mass:    Math.max(...allCaps.map(d=>d.mass||0), 1),
+  };
+
+  function bar(val, maxKey, color){
+    const pct = Math.round(Math.min(val/gMax[maxKey],1)*100);
+    return `<span class="rbar"><span class="rbar-fill" style="width:${pct}%;background:${color}"></span></span>`;
+  }
+
+  function sortVal(def, k){
+    if (k==='name')  return def.name.toLowerCase();
+    if (k==='role')  return def.role;
+    if (k==='ps')    return ps(def);
+    if (k==='shields') return def.shields||0;
+    if (k==='hull')  return def.hull||0;
+    if (k==='ehp')   return ehp(def);
+    if (k==='dps')   return dps(def);
+    if (k==='range') return maxRng(def);
+    if (k==='speed') return def.speed||0;
+    if (k==='mass')  return def.mass||0;
+    return 0;
+  }
+
+  const cols = [
+    {k:'name',    label:'Name'},
+    {k:'role',    label:'Class'},
+    {k:'ps',      label:'Power'},
+    {k:'shields', label:'Shields'},
+    {k:'hull',    label:'Hull'},
+    {k:'ehp',     label:'EHP'},
+    {k:'dps',     label:'DPS'},
+    {k:'range',   label:'Range'},
+    {k:'speed',   label:'Speed'},
+    {k:'mass',    label:'Mass'},
+  ];
+
+  // Sort controls
+  let sortRow = '<div class="roster-sort-row"><label>Sort:</label>';
+  for (const c of cols){
+    const on = rSort===c.k ? ' on' : '';
+    const arr = rSort===c.k ? (rDir<0?' ↓':' ↑') : '';
+    sortRow += `<button class="rsb${on}" data-k="${c.k}">${c.label}${arr}</button>`;
+  }
+  sortRow += '</div>';
+
+  // Build one table per faction
+  let tables = '';
+  for (const [fid, f] of Object.entries(D.factions)){
+    const keys = (D.loadouts[fid]||[]).filter(k=>{
+      const d = D.units.find(u=>u.key===k);
+      return d && d.role !== 'craft';
+    });
+    if (!keys.length) continue;
+
+    let rows = keys.map(k=>D.units.find(u=>u.key===k)).filter(Boolean);
+    rows.sort((a,b)=>{
+      const av = sortVal(a,rSort), bv = sortVal(b,rSort);
+      return typeof av==='string' ? rDir*av.localeCompare(bv) : rDir*(bv-av);
+    });
+
+    const fc   = fcolor(fid);
+    const [r,g,b] = f.tint;
+
+    let trs = '';
+    for (const def of rows){
+      const score   = ps(def);
+      const pc2     = pcolor(score, gMax.ps);
+      const hasSW   = (def.weapons||[]).some(w=>w.special);
+      const hng     = hangarForShip(def);
+      const hngStr  = hng && hng.length
+        ? `<span style="color:#55ddaa;font-size:9px">✦ ${hng.reduce((a,s)=>a+s.max,0).toLocaleString()}</span>`
+        : '<span style="opacity:.25">—</span>';
+      const roleStr = def.role.charAt(0).toUpperCase()+def.role.slice(1);
+      const dpsV    = dps(def);
+      const ehpV    = ehp(def);
+      const rngV    = maxRng(def);
+      trs += `<tr>
+        <td style="font-weight:600;color:#cce8ff;min-width:168px">
+          ${def.name}${hasSW?'<span style="color:#cc88ff;font-size:9px;margin-left:4px">★</span>':''}
+        </td>
+        <td class="rtag">${roleStr}</td>
+        <td class="rnum" style="color:${pc2};font-weight:700">${score.toLocaleString()}${bar(score,'ps',pc2)}</td>
+        <td class="rnum">${(def.shields||0).toLocaleString()}${bar(def.shields||0,'shields','#3a6ecc')}</td>
+        <td class="rnum">${(def.hull||0).toLocaleString()}${bar(def.hull||0,'hull','#2a9955')}</td>
+        <td class="rnum">${Math.round(ehpV).toLocaleString()}${bar(ehpV,'ehp','#5568cc')}</td>
+        <td class="rnum">${dpsV.toFixed(1)}${bar(dpsV,'dps','#cc5533')}</td>
+        <td class="rnum">${Math.round(rngV)}${bar(rngV,'range','#7aaa22')}</td>
+        <td class="rnum">${def.speed||0}${bar(def.speed||0,'speed','#2299bb')}</td>
+        <td class="rnum">${(def.mass||0).toLocaleString()}${bar(def.mass||0,'mass','#997733')}</td>
+        <td>${hngStr}</td>
+      </tr>`;
+    }
+
+    tables += `<div class="roster-faction">
+      <div class="rfhdr" style="color:${fc};border-color:rgba(${r},${g},${b},0.40);background:rgba(${r},${g},${b},0.08)">
+        ${f.name} <span style="font-size:10px;font-weight:400;opacity:.55;margin-left:6px">${rows.length} ship classes</span>
+      </div>
+      <table class="roster-tbl">
+        <thead><tr>
+          <th>Ship Name</th><th>Class</th>
+          <th class="r">Power</th><th class="r">Shields</th><th class="r">Hull</th>
+          <th class="r">EHP</th><th class="r">DPS</th><th class="r">Range</th>
+          <th class="r">Speed</th><th class="r">Mass</th><th>Hangar</th>
+        </tr></thead>
+        <tbody>${trs}</tbody>
+      </table>
+    </div>`;
+  }
+
+  body.innerHTML = `<div class="roster-wrap">
+    <p class="roster-intro">Full ship class specifications for every faction. Craft excluded. ★ = superweapon capable. Hangar = lifetime craft cap. DPS is effective (type modifiers + limited-use penalty applied).</p>
+    ${sortRow}
+    ${tables}
+  </div>`;
+
+  body.querySelectorAll('.rsb').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const k = btn.dataset.k;
+      if (rSort===k) rDir *= -1;
+      else { rSort=k; rDir = (k==='name'||k==='role') ? 1 : -1; }
+      renderRoster();
+    });
+  });
+}
+
+})();
+</script>
+</body>
+</html>

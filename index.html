@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Fleet Commander: The Last Armada</title>
+  <style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:#02040e;color:#e8eefc;
+    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial}
+
+  /* ── Starfield ──────────────────────────────────────────── */
+  #stars{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+  /* ── Main layout ────────────────────────────────────────── */
+  #app{position:relative;z-index:1;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center}
+
+  /* ── Title ──────────────────────────────────────────────── */
+  .m-title-block{text-align:center;margin-bottom:52px}
+  .m-eyebrow{font-size:11px;letter-spacing:4px;text-transform:uppercase;color:#5aa7ff;opacity:.7;margin-bottom:12px}
+  .m-title{
+    font-size:clamp(28px,5vw,56px);font-weight:900;letter-spacing:-1px;line-height:1.1;
+    background:linear-gradient(135deg,#ffffff 0%,#a8d0ff 40%,#5aa7ff 70%,#1a5aaa 100%);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  }
+  .m-subtitle{font-size:14px;color:#556688;margin-top:10px;letter-spacing:.5px}
+
+  /* ── Main menu buttons ──────────────────────────────────── */
+  #mainMenu{display:flex;flex-direction:column;gap:14px;align-items:center;width:340px}
+  .m-btn{
+    width:100%;padding:16px 28px;border-radius:14px;border:1px solid rgba(90,150,255,.35);
+    background:rgba(10,20,48,.7);color:#e8eefc;font-size:15px;font-weight:600;cursor:pointer;
+    font-family:inherit;letter-spacing:.3px;transition:.18s;
+    display:flex;align-items:center;gap:14px;
+  }
+  .m-btn:hover{border-color:rgba(90,150,255,.9);background:rgba(20,40,100,.7);
+    box-shadow:0 0 28px rgba(90,150,255,.18);transform:translateY(-2px)}
+  .m-btn:active{transform:translateY(0)}
+  .m-btn-icon{font-size:22px;flex-shrink:0}
+  .m-btn-text{}
+  .m-btn-label{font-size:15px;font-weight:700}
+  .m-btn-desc{font-size:11px;color:#5a7799;margin-top:2px;font-weight:400}
+
+  .m-btn.primary{border-color:rgba(90,200,255,.5);background:rgba(10,40,80,.75)}
+  .m-btn.primary:hover{border-color:rgba(90,200,255,.95);box-shadow:0 0 32px rgba(90,200,255,.2)}
+  .m-btn.gold{border-color:rgba(255,200,40,.35);background:rgba(40,30,5,.7)}
+  .m-btn.gold:hover{border-color:rgba(255,200,40,.9);box-shadow:0 0 28px rgba(255,200,40,.15)}
+
+  /* ── Campaign select screen ─────────────────────────────── */
+  #campaignSelect{display:none;flex-direction:column;gap:0;width:min(900px,95vw);max-height:90vh}
+  .cs-hdr{display:flex;align-items:center;gap:16px;margin-bottom:28px}
+  .cs-back{background:none;border:1px solid rgba(80,100,180,.4);color:#8899bb;border-radius:8px;
+    padding:7px 16px;cursor:pointer;font-family:inherit;font-size:13px;transition:.15s}
+  .cs-back:hover{border-color:#5aa7ff;color:#aaccff}
+  .cs-hdr h2{font-size:22px;font-weight:800;color:#cce4ff;letter-spacing:.3px}
+  .cs-hdr span{font-size:12px;color:#445566;margin-left:4px}
+
+  .campaigns-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(390px,1fr));gap:16px;overflow-y:auto;padding-bottom:8px}
+  .camp-card{
+    background:rgba(8,14,32,.85);border:1px solid rgba(30,55,120,.5);border-radius:14px;
+    padding:20px 22px;cursor:pointer;transition:.2s;position:relative;overflow:hidden;
+  }
+  .camp-card:hover{border-color:rgba(90,150,255,.7);transform:translateY(-3px);box-shadow:0 8px 32px rgba(0,0,0,.5)}
+  .camp-card::before{content:'';position:absolute;inset:0;background:linear-gradient(135deg,rgba(90,150,255,.04),transparent 60%);pointer-events:none}
+  .cc-era{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:#445566;margin-bottom:6px}
+  .cc-num{font-size:11px;font-weight:700;letter-spacing:.5px;margin-bottom:8px}
+  .cc-name{font-size:17px;font-weight:800;color:#ddeeff;margin-bottom:10px;line-height:1.25}
+  .cc-meta{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+  .cc-tag{font-size:10px;padding:3px 9px;border-radius:99px;border:1px solid;font-weight:600;letter-spacing:.3px}
+  .cc-desc{font-size:12px;color:#556688;line-height:1.55;margin-bottom:14px}
+  .cc-factions{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
+  .cc-faction-pill{font-size:10px;padding:3px 10px;border-radius:99px;border:1px solid rgba(255,255,255,.1);
+    background:rgba(0,0,0,.3);font-weight:600}
+  .cc-obj{font-size:11px;color:#3ddc97;padding:8px 12px;background:rgba(60,220,150,.06);
+    border:1px solid rgba(60,220,150,.18);border-radius:8px;display:flex;align-items:center;gap:8px}
+  .cc-planets{font-size:10px;color:#5a7799;margin-top:8px}
+
+  /* ── Campaign map screen ────────────────────────────────── */
+  #campaignMap{display:none;flex-direction:column;width:100vw;height:100vh;position:fixed;inset:0;z-index:50;background:#02040e}
+
+  /* Loaded dynamically by campaign.js */
+  </style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+
+<div id="app">
+  <!-- Main menu -->
+  <div id="mainMenu">
+    <div class="m-title-block">
+      <div class="m-eyebrow">Fleet Commander</div>
+      <div class="m-title">The Last Armada</div>
+      <div class="m-subtitle">Command fleets across the galaxy</div>
+    </div>
+
+    <button class="m-btn gold" id="btnCampaign">
+      <span class="m-btn-icon">🌌</span>
+      <span class="m-btn-text">
+        <div class="m-btn-label">Campaign</div>
+        <div class="m-btn-desc">Four galactic campaigns across history</div>
+      </span>
+    </button>
+
+    <button class="m-btn primary" id="btnSkirmish">
+      <span class="m-btn-icon">⚔️</span>
+      <span class="m-btn-text">
+        <div class="m-btn-label">Custom Skirmish</div>
+        <div class="m-btn-desc">Build and fight any battle you like</div>
+      </span>
+    </button>
+  </div>
+
+  <!-- Campaign selection -->
+  <div id="campaignSelect">
+    <div class="cs-hdr">
+      <button class="cs-back" id="csBack">← Back</button>
+      <h2>Campaigns <span>— Choose your war</span></h2>
+    </div>
+    <div class="campaigns-grid" id="campaignsGrid"></div>
+  </div>
+</div>
+
+<!-- Campaign map (full screen, injected by campaign.js) -->
+<div id="campaignMap"></div>
+
+<script src="campaign.js"></script>
+<script>
+(function(){
+  // ── Starfield ─────────────────────────────────────────────
+  const canvas = document.getElementById('stars');
+  const ctx2   = canvas.getContext('2d');
+  let stars    = [];
+  function resize(){
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    stars = Array.from({length:320},()=>({
+      x: Math.random()*canvas.width,
+      y: Math.random()*canvas.height,
+      r: Math.random()*1.5+0.3,
+      a: Math.random()*0.8+0.2,
+      speed: Math.random()*0.3+0.05,
+      twinkle: Math.random()*Math.PI*2,
+    }));
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  let raf;
+  function drawStars(){
+    ctx2.clearRect(0,0,canvas.width,canvas.height);
+    const t = performance.now()*0.001;
+    for(const s of stars){
+      const a = s.a*(0.7+0.3*Math.sin(t*s.speed+s.twinkle));
+      ctx2.beginPath();
+      ctx2.arc(s.x,s.y,s.r,0,Math.PI*2);
+      ctx2.fillStyle=`rgba(180,210,255,${a})`;
+      ctx2.fill();
+    }
+    raf = requestAnimationFrame(drawStars);
+  }
+  drawStars();
+
+  // ── Navigation ────────────────────────────────────────────
+  const mainMenu       = document.getElementById('mainMenu');
+  const campaignSelect = document.getElementById('campaignSelect');
+
+  document.getElementById('btnSkirmish').addEventListener('click', ()=>{ window.location.href='skirmish.html'; });
+  document.getElementById('btnCampaign').addEventListener('click', ()=>{ showCampaignSelect(); });
+  document.getElementById('csBack').addEventListener('click', ()=>{ showMain(); });
+
+  function showMain(){
+    mainMenu.style.display='flex';
+    campaignSelect.style.display='none';
+    document.getElementById('campaignMap').style.display='none';
+  }
+  function showCampaignSelect(){
+    mainMenu.style.display='none';
+    campaignSelect.style.display='flex';
+    renderCampaignCards();
+  }
+
+  // ── Campaign cards ────────────────────────────────────────
+  function renderCampaignCards(){
+    const grid = document.getElementById('campaignsGrid');
+    grid.innerHTML = '';
+    const DIFF_COLOR = { Easy:'#3ddc97', Medium:'#ffcc33', Hard:'#ff5b5b' };
+    for(const c of window.CAMPAIGNS){
+      const col = DIFF_COLOR[c.difficulty]||'#aabbcc';
+      const card = document.createElement('div');
+      card.className = 'camp-card';
+      card.innerHTML = `
+        <div class="cc-era">${c.era}</div>
+        <div class="cc-num" style="color:${col}">${c.id}  ·  ${c.period}</div>
+        <div class="cc-name">${c.name}</div>
+        <div class="cc-meta">
+          <span class="cc-tag" style="color:${col};border-color:${col}33;background:${col}11">${c.difficulty}</span>
+          <span class="cc-tag" style="color:#aabbcc;border-color:#aabbcc33;background:#aabbcc11">${c.planets} Planets</span>
+        </div>
+        <div class="cc-desc">${c.description}</div>
+        <div class="cc-factions">${c.factionPills.map(p=>`<span class="cc-faction-pill" style="color:${p.color};border-color:${p.color}44">${p.role}: ${p.name}</span>`).join('')}</div>
+        <div class="cc-obj">🎯 ${c.objective}</div>
+        <div class="cc-planets">Galaxy: ${c.planets} planets · You start with ${c.startingPlanets} planets</div>
+      `;
+      card.addEventListener('click', ()=>{
+        cancelAnimationFrame(raf);
+        window.startCampaign(c.id);
+      });
+      grid.appendChild(card);
+    }
+  }
+
+  // Expose navigation helpers for campaign.js
+  window._menuShowMain = showMain;
+  window._menuShowCampaignSelect = showCampaignSelect;
+})();
+</script>
+</body>
+</html>
