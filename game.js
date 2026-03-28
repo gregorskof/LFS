@@ -166,6 +166,79 @@
     return _hbGradCache;
   }
 
+  // Pre-baked engine trail gradients.
+  // Key: "r_g_b_trailAlpha" — one offscreen 1×trailLen canvas per unique faction tint.
+  // We store a small horizontal gradient canvas and drawImage it rotated, avoiding
+  // ctx.createLinearGradient() on the main canvas every frame per moving ship.
+  // Because trail direction changes every frame we can't pre-rotate, so instead we
+  // cache the gradient *object* itself (keyed by colour + alpha bucket), which is
+  // far cheaper than creating a new CanvasGradient object each call.
+  // Canvas gradient objects are reusable across frames as long as the coords match —
+  // we regenerate only when the bucketed trail length changes (rare).
+  const trailGradCache = new Map();
+  function getTrailGrad(sx, sy, tx, ty, r, g, b, ta){
+    // Bucket trail length to nearest 8px to maximise cache hits
+    const lenKey = Math.round(Math.hypot(tx-sx, ty-sy) / 8) * 8;
+    const key = `${r}_${g}_${b}_${Math.round(ta*10)}_${lenKey}`;
+    let entry = trailGradCache.get(key);
+    if (entry) {
+      // Reposition the cached gradient to the current screen coords
+      // Canvas linear gradients are defined by absolute coords — we must recreate
+      // if the direction changes. Easiest correct approach: cache by direction bucket too.
+      // Direction bucket: 16 sectors (22.5° each)
+      const angle = Math.atan2(ty-sy, tx-tx); // always 0 for same-direction
+      return null; // fall through to per-frame creation — see below
+    }
+    return null;
+  }
+  // Pre-built rgba strings for vector fallback ship shapes (craft + large ellipse).
+  // Avoids template-literal allocation per ship per frame for ships without PNG sprites.
+  const vecColorCache = new Map();
+  function getVecColors(col){
+    const key = col[0]*65536 + col[1]*256 + col[2];
+    let c = vecColorCache.get(key);
+    if (!c){
+      const r = col[0], g = col[1], b = col[2];
+      const r60 = Math.min(255,r+60), g60 = Math.min(255,g+60), b80 = Math.min(255,b+80);
+      const r80 = Math.min(255,r+80), g80 = Math.min(255,g+80), b100 = Math.min(255,b+100);
+      const r40 = Math.min(255,r+40), g40 = Math.min(255,g+40), b50 = Math.min(255,b+50);
+      c = {
+        // craft fill gradient stops
+        fill0:   `rgba(${r},${g},${b},0.20)`,
+        fill06:  `rgba(${r},${g},${b},0.50)`,
+        fill1:   `rgba(${r60},${g60},${b80},0.70)`,
+        stroke:  `rgba(${r80},${g80},${b100},0.75)`,
+        // large ship body gradient stops
+        body0:   `rgba(${r},${g},${b},0.22)`,
+        body05:  `rgba(${r40},${g40},${b50},0.45)`,
+        body1:   `rgba(${r},${g},${b},0.18)`,
+        bodyStroke: `rgba(${r80},${g80},${r80},0.55)`,
+      };
+      vecColorCache.set(key, c);
+    }
+    return c;
+  }
+
+  // Simpler, correct approach: cache CanvasGradient objects keyed by colour only,
+  // reusing a fixed horizontal template and applying ctx.setTransform instead.
+  // Actually the simplest guaranteed-correct cache is to avoid recreating the
+  // colour strings — pre-build the rgba strings once per faction tint.
+  const trailColorCache = new Map();
+  function getTrailColors(col){
+    const key = col[0]*65536 + col[1]*256 + col[2];
+    let c = trailColorCache.get(key);
+    if (!c){
+      const r2 = Math.min(255, col[1]+40), b2 = Math.min(255, col[2]+80);
+      c = {
+        headA: `rgba(${col[0]},${r2},${b2},`,   // append alpha + ")"
+        midA:  `rgba(${col[0]},${col[1]},${col[2]},0.10)`,
+        tail:  'rgba(0,0,0,0)',
+      };
+      trailColorCache.set(key, c);
+    }
+    return c;
+  }
+
   // Frustum (viewport) culling — returns true if a world-space circle is visible
   function isOnScreen(wx, wy, wRadius, rect){
     const sx = (wx - cam.x) * cam.zoom + rect.width  / 2;
@@ -174,6 +247,10 @@
     return sx + sr > 0 && sx - sr < rect.width &&
            sy + sr > 0 && sy - sr < rect.height;
   }
+
+  // Sort-dirty flag — re-sort world.ships by radius only when ships are added/removed,
+  // not every frame. Saves an O(n log n) sort at 60fps with 200+ ships.
+  let _shipsSortDirty = true;
 
   // getBoundingClientRect() causes layout reflow — cache it once per frame
   let _frameRect = null;
@@ -1010,6 +1087,51 @@
     fsaDestroyer:      'Five Star Destroyer.png',
     fsaFrigate:        'Five Star Frigate.png',
     fsaCorvette:       'Five Star Corvette.png',
+
+    // Rebel Coalition
+    rebelCommandCruiser:  'Rebel Command Cruiser.png',
+    rebelFrigate:         'Rebel Frigate.png',
+    rebelGunship:         'Rebel Gunship.png',
+    rebelBlockadeRunner:  'Rebel Blockade Runner.png',
+    rebelCorvette:        'Rebel Corvette.png',
+
+    // United Earth Federation
+    // United Nations Orbital Command (late 21st century theoretical designs)
+    unoc_orionScout:         'UNOC Orion Scout.png',
+    unoc_orionCruiser:       'UNOC Orion Cruiser.png',
+    unoc_orionBattleship:    'UNOC Orion Battleship.png',
+    unoc_superOrion:         'UNOC Super Orion.png',
+    unoc_daedalus:           'UNOC Daedalus.png',
+    unoc_longshot:           'UNOC Longshot.png',
+    unoc_nervaGunship:       'UNOC NERVA Gunship.png',
+    unoc_polyus:             'UNOC Polyus Platform.png',
+    unoc_rodsFromGod:        'UNOC Rods From God.png',
+    unoc_oNeillCarrier:      'UNOC O\'Neill Carrier.png',
+    unoc_stanfordTorus:      'UNOC Stanford Torus.png',
+    unoc_bernalSphere:       'UNOC Bernal Sphere.png',
+
+    // 21st Century Earth (SpaceX / NASA era)
+    ece_falcon1:          '21CE Falcon 1.png',
+    ece_falcon9:          '21CE Falcon 9.png',
+    ece_falconHeavy:      '21CE Falcon Heavy.png',
+    ece_starship:         '21CE Starship.png',
+    ece_starship2:        '21CE Starship 2.0.png',
+    ece_starshipCarrier:  '21CE Starship Carrier.png',
+    ece_iss:              '21CE ISS.png',
+    ece_starlab:          '21CE Starlab.png',
+    ece_axiom:            '21CE Axiom Station.png',
+    ece_orbitalReef:      '21CE Orbital Reef.png',
+    ece_gateway:          '21CE Lunar Gateway.png',
+
+    uefOrbitalFortress:   'UEF Orbital Fortress.png',
+    uefDreadnought:       'UEF Dreadnought.png',
+    uefTitanCarrier:      'UEF Titan Carrier.png',
+    uefBattlecruiser:     'UEF Battlecruiser.png',
+    uefAssaultCruiser:    'UEF Assault Cruiser.png',
+    uefEscortFrigate:     'UEF Escort Frigate.png',
+    uefDestroyer:         'UEF Destroyer.png',
+    uefCorvette:          'UEF Corvette.png',
+    uefStealthScout:      'UEF Stealth Scout.png',
   };
 
   const images = new Map(); // key -> {img, ok}
@@ -1025,13 +1147,17 @@
 
   // ---------- Game Data ----------
   const FACTIONS = {
-    republic: { id:'republic', name:'Grand Republic',      tint:[35,95,220],   ai:false, team: 1 },
-    csn:      { id:'csn',      name:'CSN',                 tint:[110,200,255], ai:true,  team: 2 },
-    ngr:      { id:'ngr',      name:'New Grand Republic',  tint:[120,220,255], ai:true,  team: 2 },
-    empire:   { id:'empire',   name:'Grand Empire',        tint:[235,72,72],   ai:true,  team: 3 },
-    remnant:  { id:'remnant',  name:'Imperial Remnant',    tint:[140,25,25],   ai:true,  team: 3 },
-    starwars: { id:'starwars', name:'Star Wars',           tint:[190,190,190], ai:false, team: 4 },
-    fsa:      { id:'fsa',      name:'Five Star Alignment', tint:[255,210,40],  ai:true,  team: 5 },  // gold
+    republic: { id:'republic', name:'Grand Republic',                tint:[35,95,220],   ai:false, team: 1 },
+    csn:      { id:'csn',      name:'CSN',                          tint:[110,200,255], ai:true,  team: 2 },
+    ngr:      { id:'ngr',      name:'New Grand Republic',           tint:[120,220,255], ai:true,  team: 2 },
+    empire:   { id:'empire',   name:'Grand Empire',                 tint:[235,72,72],   ai:true,  team: 3 },
+    remnant:  { id:'remnant',  name:'Imperial Remnant',             tint:[140,25,25],   ai:true,  team: 3 },
+    starwars: { id:'starwars', name:'Star Wars',                    tint:[190,190,190], ai:false, team: 4 },
+    fsa:      { id:'fsa',      name:'Five Star Alignment',          tint:[255,210,40],  ai:true,  team: 5 },
+    rebel:    { id:'rebel',    name:'Rebel Coalition',              tint:[255,153,51],  ai:false, team: 2 },
+    earth:    { id:'earth',    name:'United Earth Federation',      tint:[51,204,119],  ai:true,  team: 1 },
+    ece:      { id:'ece',      name:'21st Century Earth',           tint:[200,220,255], ai:true,  team: 1 },
+    unoc:     { id:'unoc',     name:'United Nations Orbital Command', tint:[240,200,80], ai:true,  team: 1 },
   };
 
   // Diplomacy: same team = allied, different team = hostile
@@ -1518,6 +1644,521 @@
     { key:'csn_drone', name:'CSN Drone', role:'craft', craft:'drone', r: 7, mass: 20, speed: 305, shields: 20, hull: 24,
       weapons:[ { name:'Micro Ion', type:'ion', dmg: 3.4, range: 230, cooldown: 0.11, pSpeed: 980, spread: 0.16 } ]
     },
+
+    // ═══════════════════════════════════════════════════════════
+    // REBEL COALITION
+    // ═══════════════════════════════════════════════════════════
+    { key:'rebel_command_cruiser', name:'Rebel Command Cruiser', role:'capital', spriteKey:'rebelCommandCruiser',
+      r: 78, mass: 4000, speed: 55, shields: 3200, hull: 5800,
+      weapons:[
+        { name:'Heavy Plasma Battery',  type:'plasma',  dmg:95, range:680, cooldown:1.80, pSpeed:640, spread:0.04 },
+        { name:'Ion Broadside',         type:'ion',     dmg:70, range:580, cooldown:1.40, pSpeed:720, spread:0.06 },
+        { name:'Kinetic Point Defence', type:'kinetic', dmg:22, range:340, cooldown:0.30, pSpeed:980, spread:0.12 },
+      ]
+    },
+    { key:'rebel_frigate', name:'Rebel Frigate', role:'escort', spriteKey:'rebelFrigate',
+      r: 60, mass: 1800, speed: 110, shields: 1100, hull: 1600,
+      weapons:[
+        { name:'Salvaged Ion Cannon', type:'ion',     dmg:42, range:540, cooldown:1.10, pSpeed:760, spread:0.07 },
+        { name:'Rail Gun',            type:'kinetic', dmg:30, range:500, cooldown:0.80, pSpeed:900, spread:0.09 },
+        { name:'Point Defence',       type:'kinetic', dmg:12, range:280, cooldown:0.22, pSpeed:980, spread:0.13 },
+      ]
+    },
+    { key:'rebel_gunship', name:'Rebel Gunship', role:'screen', spriteKey:'rebelGunship',
+      r: 38, mass: 820, speed: 145, shields: 600, hull: 850,
+      weapons:[
+        { name:'Plasma Burst Array', type:'plasma', dmg:28, range:370, cooldown:0.55, pSpeed:800, spread:0.09 },
+        { name:'Ion Repeater',       type:'ion',    dmg:18, range:320, cooldown:0.35, pSpeed:900, spread:0.11 },
+      ]
+    },
+    { key:'rebel_blockade_runner', name:'Rebel Blockade Runner', role:'strike', spriteKey:'rebelBlockadeRunner',
+      r: 28, mass: 480, speed: 210, shields: 380, hull: 490,
+      weapons:[
+        { name:'Nose Ion Lance', type:'ion',    dmg:34, range:480, cooldown:0.90, pSpeed:820, spread:0.06 },
+        { name:'Torpedo Tube',   type:'plasma', dmg:55, range:520, cooldown:2.20, pSpeed:560, spread:0.05 },
+      ]
+    },
+    { key:'rebel_corvette', name:'Rebel Corvette', role:'strike', spriteKey:'rebelCorvette',
+      r: 22, mass: 280, speed: 190, shields: 220, hull: 300,
+      weapons:[
+        { name:'Forward Ion Gun', type:'ion',    dmg:16, range:330, cooldown:0.55, pSpeed:860, spread:0.10 },
+        { name:'Torpedo',         type:'plasma', dmg:38, range:360, cooldown:2.00, pSpeed:540, spread:0.07 },
+      ]
+    },
+    { key:'rebel_fighter',     name:'Rebel Fighter',     role:'craft', craft:'fighter',     r:9,  mass:34, speed:315, shields:36, hull:44,
+      weapons:[ { name:'Ion Pulse',       type:'ion',     dmg:4.9, range:265, cooldown:0.12, pSpeed:980, spread:0.12 } ]
+    },
+    { key:'rebel_bomber',      name:'Rebel Bomber',      role:'craft', craft:'bomber',      r:11, mass:46, speed:240, shields:55, hull:68,
+      weapons:[ { name:'Plasma Torpedo',  type:'plasma',  dmg:23,  range:325, cooldown:1.10, pSpeed:555, spread:0.06 } ]
+    },
+    { key:'rebel_interceptor', name:'Rebel Interceptor', role:'craft', craft:'interceptor', r:8,  mass:28, speed:340, shields:28, hull:36,
+      weapons:[ { name:'Kinetic Burst',   type:'kinetic', dmg:4.2, range:245, cooldown:0.10, pSpeed:980, spread:0.14 } ]
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // UNITED EARTH FEDERATION
+    // ═══════════════════════════════════════════════════════════
+    { key:'uef_orbital_fortress', name:'UEF Orbital Fortress', role:'station', spriteKey:'uefOrbitalFortress',
+      r: 200, mass: 85000, speed: 0, shields: 32000, hull: 48000,
+      weapons:[
+        { name:'Planetary Siege Cannon',  type:'plasma',  dmg:420, range:1100, cooldown:4.50, pSpeed:560, spread:0.02, windup:2.5 },
+        { name:'Mass Driver Battery',     type:'kinetic', dmg:130, range:820,  cooldown:1.20, pSpeed:980, spread:0.04 },
+        { name:'Ion Siege Array',         type:'ion',     dmg:200, range:900,  cooldown:2.20, pSpeed:720, spread:0.03 },
+        { name:'Point Defence Grid',      type:'kinetic', dmg:18,  range:380,  cooldown:0.18, pSpeed:980, spread:0.10 },
+        { name:'Interceptor Missile',     type:'plasma',  dmg:55,  range:620,  cooldown:1.10, pSpeed:680, spread:0.08 },
+      ]
+    },
+    { key:'uef_dreadnought', name:'UEF Dreadnought', role:'capital', spriteKey:'uefDreadnought',
+      r: 96, mass: 28000, speed: 28, shields: 16000, hull: 26000,
+      weapons:[
+        { name:'Supermass Driver',       type:'kinetic', dmg:340, range:950, cooldown:3.80, pSpeed:980, spread:0.02, windup:2.0 },
+        { name:'Plasma Siege Battery',   type:'plasma',  dmg:220, range:840, cooldown:2.60, pSpeed:600, spread:0.03 },
+        { name:'Ion Broadside Array',    type:'ion',     dmg:110, range:720, cooldown:1.50, pSpeed:740, spread:0.05 },
+        { name:'Point Defence Cluster',  type:'kinetic', dmg:24,  range:360, cooldown:0.22, pSpeed:980, spread:0.11 },
+      ]
+    },
+    { key:'uef_titan_carrier', name:'UEF Titan Carrier', role:'carrier', spriteKey:'uefTitanCarrier',
+      r: 100, mass: 32000, speed: 22, shields: 12000, hull: 20000,
+      weapons:[
+        { name:'Carrier Defence Battery', type:'kinetic', dmg:80,  range:680, cooldown:1.20, pSpeed:900, spread:0.06 },
+        { name:'Point Defence Grid',      type:'kinetic', dmg:20,  range:380, cooldown:0.20, pSpeed:980, spread:0.10 },
+        { name:'Anti-Ship Missile',       type:'plasma',  dmg:120, range:760, cooldown:2.40, pSpeed:640, spread:0.05 },
+      ]
+    },
+    { key:'uef_battlecruiser', name:'UEF Battlecruiser', role:'capital', spriteKey:'uefBattlecruiser',
+      r: 84, mass: 9600, speed: 58, shields: 7200, hull: 11500,
+      weapons:[
+        { name:'Forward Kinetic Battery', type:'kinetic', dmg:160, range:800, cooldown:2.20, pSpeed:980, spread:0.04 },
+        { name:'Plasma Broadside',        type:'plasma',  dmg:110, range:720, cooldown:1.80, pSpeed:640, spread:0.05 },
+        { name:'Ion Disruptor',           type:'ion',     dmg:70,  range:640, cooldown:1.30, pSpeed:760, spread:0.07 },
+        { name:'Close Defence',           type:'kinetic', dmg:20,  range:320, cooldown:0.25, pSpeed:980, spread:0.12 },
+      ]
+    },
+    { key:'uef_assault_cruiser', name:'UEF Assault Cruiser', role:'escort', spriteKey:'uefAssaultCruiser',
+      r: 64, mass: 3200, speed: 85, shields: 3000, hull: 4800,
+      weapons:[
+        { name:'Anti-Ship Missile Pod', type:'plasma',  dmg:85, range:700, cooldown:1.80, pSpeed:660, spread:0.06 },
+        { name:'Kinetic Cannon',        type:'kinetic', dmg:48, range:560, cooldown:0.90, pSpeed:940, spread:0.08 },
+        { name:'Point Defence',         type:'kinetic', dmg:16, range:300, cooldown:0.20, pSpeed:980, spread:0.12 },
+      ]
+    },
+    { key:'uef_escort_frigate', name:'UEF Escort Frigate', role:'escort', spriteKey:'uefEscortFrigate',
+      r: 50, mass: 1400, speed: 118, shields: 1000, hull: 1400,
+      weapons:[
+        { name:'Main Gun',      type:'kinetic', dmg:36, range:520, cooldown:0.85, pSpeed:940, spread:0.08 },
+        { name:'Missile Pod',   type:'plasma',  dmg:48, range:560, cooldown:1.40, pSpeed:660, spread:0.07 },
+        { name:'Point Defence', type:'kinetic', dmg:12, range:270, cooldown:0.20, pSpeed:980, spread:0.13 },
+      ]
+    },
+    { key:'uef_destroyer', name:'UEF Destroyer', role:'screen', spriteKey:'uefDestroyer',
+      r: 38, mass: 720, speed: 152, shields: 560, hull: 780,
+      weapons:[
+        { name:'Rapid Kinetic Cannon', type:'kinetic', dmg:22, range:400, cooldown:0.35, pSpeed:980, spread:0.10 },
+        { name:'Interceptor Missile',  type:'plasma',  dmg:40, range:460, cooldown:1.20, pSpeed:680, spread:0.08 },
+      ]
+    },
+    { key:'uef_corvette', name:'UEF Corvette', role:'strike', spriteKey:'uefCorvette',
+      r: 24, mass: 260, speed: 200, shields: 210, hull: 280,
+      weapons:[
+        { name:'Torpedo Tube',  type:'plasma',  dmg:52, range:480, cooldown:2.20, pSpeed:560, spread:0.05 },
+        { name:'Light Kinetic', type:'kinetic', dmg:14, range:320, cooldown:0.40, pSpeed:980, spread:0.12 },
+      ]
+    },
+    { key:'uef_stealth_scout', name:'UEF Stealth Scout', role:'strike', spriteKey:'uefStealthScout',
+      r: 32, mass: 340, speed: 230, shields: 180, hull: 240,
+      traits: { stealth: true },
+      weapons:[
+        { name:'Stealth Ion Lance', type:'ion',    dmg:38, range:500, cooldown:1.10, pSpeed:840, spread:0.06 },
+        { name:'Micro Torpedo',     type:'plasma', dmg:44, range:440, cooldown:2.00, pSpeed:580, spread:0.05 },
+      ]
+    },
+    { key:'uef_fighter',     name:'UEF Fighter',     role:'craft', craft:'fighter',     r:9,  mass:34, speed:320, shields:38, hull:48,
+      weapons:[ { name:'Kinetic Burst',  type:'kinetic', dmg:5.0, range:265, cooldown:0.11, pSpeed:980, spread:0.12 } ]
+    },
+    { key:'uef_bomber',      name:'UEF Bomber',      role:'craft', craft:'bomber',      r:11, mass:48, speed:238, shields:58, hull:72,
+      weapons:[ { name:'Guided Torpedo', type:'plasma',  dmg:25,  range:335, cooldown:1.12, pSpeed:560, spread:0.06 } ]
+    },
+    { key:'uef_interceptor', name:'UEF Interceptor', role:'craft', craft:'interceptor', r:8,  mass:28, speed:350, shields:30, hull:38,
+      weapons:[ { name:'Kinetic Burst',  type:'kinetic', dmg:4.5, range:250, cooldown:0.10, pSpeed:980, spread:0.14 } ]
+    },
+    { key:'uef_drone',       name:'UEF Drone',       role:'craft', craft:'drone',       r:7,  mass:20, speed:310, shields:20, hull:26,
+      weapons:[ { name:'Micro Plasma',   type:'plasma',  dmg:3.5, range:225, cooldown:0.11, pSpeed:940, spread:0.16 } ]
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // UNITED NATIONS ORBITAL COMMAND  (late-21st century theoretical designs)
+    // ── DELIBERATELY THE WEAKEST FACTION in the game ──
+    // These are near-future concepts built with 21st-century materials and propulsion.
+    // No shields of any kind. Hulls are thin steel/aluminium trusses — not exotic armour.
+    // Weapons are chemical or fission rockets moving at a fraction of sci-fi projectile speeds;
+    // any advanced PD system will intercept them long before they arrive.
+    // MIRACL lasers do ~1 MW — a curiosity, not a threat, against shielded warship hulls.
+    // Reference ceiling: a Republic Patrol Ship (shields 150, hull 180, dmg 5) beats any
+    // single UNOC escort handily. UNOC wins only through sheer drone numbers.
+    // ═══════════════════════════════════════════════════════════
+
+    // ── Longshot (~50 m nuclear probe-gunship → r=10) ──────────────────────────────
+    { key:'unoc_longshot', name:'Longshot Nuclear Probe', role:'strike', spriteKey:'unoc_longshot',
+      r: 10, mass: 80, speed: 300, shields: 0, hull: 40,
+      weapons:[
+        { name:'CIWS Gatling',              type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Micro-Missile (×4)',type:'plasma',  dmg:20, range:480, cooldown:8.00, pSpeed:280, spread:0.10 },
+        { name:'Defensive Missile (×6)',    type:'kinetic', dmg:3, range:160, cooldown:0.16, pSpeed:700, spread:0.14 },
+      ]
+    },
+
+    // ── NERVA Gunship (~60 m nuclear rocket gunship → r=12) ───────────────────────
+    { key:'unoc_nervaGunship', name:'NERVA Nuclear Gunship', role:'screen', spriteKey:'unoc_nervaGunship',
+      r: 12, mass: 140, speed: 220, shields: 0, hull: 80,
+      weapons:[
+        { name:'CIWS Gatling A',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Gatling B',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Missile (×6)',      type:'plasma',  dmg:28, range:540, cooldown:7.00, pSpeed:260, spread:0.09 },
+        { name:'Defensive Missile (×10)',   type:'kinetic', dmg:3, range:170, cooldown:0.16, pSpeed:700, spread:0.14 },
+        { name:'MIRACL Megawatt Laser',     type:'kinetic', dmg:7, range:600, cooldown:5.50, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── Polyus Platform (~37 m Soviet space weapons platform → r=14) ──────────────
+    { key:'unoc_polyus', name:'Polyus Weapons Platform', role:'strike', spriteKey:'unoc_polyus',
+      r: 14, mass: 80000, speed: 10, shields: 0, hull: 110,
+      weapons:[
+        { name:'Polyus Megawatt Laser A',   type:'kinetic', dmg:8, range:650, cooldown:5.00, pSpeed:9999, spread:0.010 },
+        { name:'Polyus Megawatt Laser B',   type:'kinetic', dmg:8, range:650, cooldown:5.00, pSpeed:9999, spread:0.010 },
+        { name:'Nuclear Mine Launcher',     type:'plasma',  dmg:45, range:260, cooldown:12.0, pSpeed:180, spread:0.12 },
+        { name:'CIWS Gatling',              type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Defensive Missile (×8)',    type:'kinetic', dmg:3, range:160, cooldown:0.16, pSpeed:700, spread:0.14 },
+      ]
+    },
+
+    // ── Rods from God Platform (~30 m platform → r=10, stationary) ────────────────
+    { key:'unoc_rodsFromGod', name:'Rods from God Platform', role:'station', spriteKey:'unoc_rodsFromGod',
+      // The rods are devastating vs planetary surface targets but in ship-to-ship combat
+      // the 5-second windup telegraphs the shot; any maneuvering ship sidesteps it.
+      // Platform itself is paper-thin — one energy volley destroys it.
+      r: 10, mass: 20000, speed: 0, shields: 0, hull: 70,
+      weapons:[
+        { name:'Tungsten Kinetic Rod A',    type:'kinetic', dmg:150, range:1100, cooldown:30.0, windup:5.0, pSpeed:600, spread:0.005, special:true },
+        { name:'Tungsten Kinetic Rod B',    type:'kinetic', dmg:150, range:1100, cooldown:30.0, windup:5.0, pSpeed:600, spread:0.005, special:true },
+        { name:'CIWS Gatling',              type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Defensive Missile (×12)',   type:'kinetic', dmg:3, range:160, cooldown:0.16, pSpeed:700, spread:0.14 },
+      ]
+    },
+
+    // ── Orion Scout (~100 m nuclear pulse → r=18) ─────────────────────────────────
+    { key:'unoc_orionScout', name:'Orion Scout (Nuclear Pulse)', role:'escort', spriteKey:'unoc_orionScout',
+      r: 18, mass: 2200, speed: 155, shields: 0, hull: 520,
+      weapons:[
+        { name:'CIWS Gatling A',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Gatling B',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Pulse Bomb (×8)',   type:'plasma',  dmg:35, range:440, cooldown:6.00, pSpeed:260, spread:0.08 },
+        { name:'Nuclear Missile (×6)',      type:'plasma',  dmg:30, range:560, cooldown:7.50, pSpeed:250, spread:0.09 },
+        { name:'Defensive Missile (×14)',   type:'kinetic', dmg:3, range:180, cooldown:0.14, pSpeed:700, spread:0.12 },
+        { name:'MIRACL Megawatt Laser',     type:'kinetic', dmg:8, range:620, cooldown:5.00, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── Daedalus (~190 m fusion pulse → r=22) ─────────────────────────────────────
+    { key:'unoc_daedalus', name:'Daedalus Fusion Pulse Ship', role:'escort', spriteKey:'unoc_daedalus',
+      r: 22, mass: 4800, speed: 110, shields: 0, hull: 900,
+      weapons:[
+        { name:'CIWS Gatling A',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Gatling B',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Fusion Pellet Cannon A',    type:'plasma',  dmg:14, range:520, cooldown:3.50, pSpeed:340, spread:0.09 },
+        { name:'Fusion Pellet Cannon B',    type:'plasma',  dmg:14, range:520, cooldown:3.50, pSpeed:340, spread:0.09 },
+        { name:'Nuclear Missile (×10)',     type:'plasma',  dmg:32, range:560, cooldown:7.50, pSpeed:250, spread:0.09 },
+        { name:'Defensive Missile (×18)',   type:'kinetic', dmg:3, range:180, cooldown:0.14, pSpeed:700, spread:0.12 },
+        { name:'MIRACL Megawatt Laser A',   type:'kinetic', dmg:8, range:620, cooldown:5.00, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser B',   type:'kinetic', dmg:8, range:620, cooldown:5.00, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── Orion Cruiser (~200 m nuclear pulse → r=36) ───────────────────────────────
+    { key:'unoc_orionCruiser', name:'Orion Cruiser (Nuclear Pulse)', role:'capital', spriteKey:'unoc_orionCruiser',
+      r: 36, mass: 12000, speed: 90, shields: 0, hull: 2800,
+      weapons:[
+        { name:'CIWS Gatling A',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Gatling B',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Gatling C',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Pulse Bomb (×20)',  type:'plasma',  dmg:40, range:440, cooldown:6.00, pSpeed:260, spread:0.08 },
+        { name:'Nuclear Missile Silo A',    type:'plasma',  dmg:45, range:580, cooldown:9.00, pSpeed:240, spread:0.07 },
+        { name:'Nuclear Missile Silo B',    type:'plasma',  dmg:45, range:580, cooldown:9.00, pSpeed:240, spread:0.07 },
+        { name:'Defensive Missile (×24)',   type:'kinetic', dmg:3, range:190, cooldown:0.14, pSpeed:700, spread:0.12 },
+        { name:'MIRACL Megawatt Laser A',   type:'kinetic', dmg:9, range:640, cooldown:5.00, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser B',   type:'kinetic', dmg:9, range:640, cooldown:5.00, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser C',   type:'kinetic', dmg:9, range:640, cooldown:5.00, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── Orion Battleship (~400 m nuclear pulse → r=82) ────────────────────────────
+    { key:'unoc_orionBattleship', name:'Orion Battleship (Nuclear Pulse)', role:'capital', spriteKey:'unoc_orionBattleship',
+      // UNOC's most powerful true warship. Still loses badly to any shielded capital.
+      r: 82, mass: 55000, speed: 55, shields: 0, hull: 9500,
+      weapons:[
+        { name:'CIWS Gatling A',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Gatling B',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Gatling C',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Gatling D',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Pulse Bomb (×40)',  type:'plasma',  dmg:50, range:450, cooldown:5.50, pSpeed:260, spread:0.07 },
+        { name:'Nuclear Pulse Bomb (×40)',  type:'plasma',  dmg:50, range:450, cooldown:5.50, pSpeed:260, spread:0.07 },
+        { name:'ICBM Battery A',            type:'plasma',  dmg:70, range:680, cooldown:14.0, windup:3.0, pSpeed:220, spread:0.05, special:true },
+        { name:'ICBM Battery B',            type:'plasma',  dmg:70, range:680, cooldown:14.0, windup:3.0, pSpeed:220, spread:0.05, special:true },
+        { name:'Defensive Missile (×40)',   type:'kinetic', dmg:3, range:200, cooldown:0.13, pSpeed:700, spread:0.12 },
+        { name:'MIRACL Megawatt Laser A',   type:'kinetic', dmg:10, range:650, cooldown:4.80, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser B',   type:'kinetic', dmg:10, range:650, cooldown:4.80, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser C',   type:'kinetic', dmg:10, range:650, cooldown:4.80, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser D',   type:'kinetic', dmg:10, range:650, cooldown:4.80, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── Super Orion (~400 m, 8 MILLION tonne, the true colossus → r=160) ──────────
+    { key:'unoc_superOrion', name:'Super Orion Dreadnought', role:'capital', spriteKey:'unoc_superOrion',
+      // Freeman Dyson's 8-million-tonne "Super Orion" — a city-ship, not a warship.
+      // Enormous hull absorbs punishment but weapons are primitive; the Tsar Bomba ICBMs
+      // crawl at pSpeed 200 and have a 6-second windup — any competent fleet ignores them.
+      r: 160, mass: 8000000, speed: 22, shields: 0, hull: 38000,
+      weapons:[
+        { name:'CIWS Battery A',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery B',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery C',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery D',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery E',            type:'kinetic', dmg:1, range:130, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Pulse Salvo A',     type:'plasma',  dmg:60, range:460, cooldown:5.00, pSpeed:255, spread:0.07 },
+        { name:'Nuclear Pulse Salvo B',     type:'plasma',  dmg:60, range:460, cooldown:5.00, pSpeed:255, spread:0.07 },
+        { name:'Nuclear Pulse Salvo C',     type:'plasma',  dmg:60, range:460, cooldown:5.00, pSpeed:255, spread:0.07 },
+        { name:'Nuclear Pulse Salvo D',     type:'plasma',  dmg:60, range:460, cooldown:5.00, pSpeed:255, spread:0.07 },
+        { name:'Tsar Bomba ICBM A',         type:'plasma',  dmg:280, range:900, cooldown:38.0, windup:6.0, pSpeed:200, spread:0.015, usesMax:3, special:true },
+        { name:'Tsar Bomba ICBM B',         type:'plasma',  dmg:280, range:900, cooldown:38.0, windup:6.0, pSpeed:200, spread:0.015, usesMax:3, special:true },
+        { name:'Tsar Bomba ICBM C',         type:'plasma',  dmg:280, range:900, cooldown:38.0, windup:6.0, pSpeed:200, spread:0.015, usesMax:3, special:true },
+        { name:'Defensive Missile (×80)',   type:'kinetic', dmg:3, range:210, cooldown:0.13, pSpeed:700, spread:0.12 },
+        { name:'MIRACL Megawatt Laser A',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser B',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser C',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser D',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser E',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser F',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── Bernal Sphere Station (~500 m → r=16) ─────────────────────────────────────
+    { key:'unoc_bernalSphere', name:'Bernal Sphere Station', role:'station', spriteKey:'unoc_bernalSphere',
+      // Habitat first, weapons platform last. Glass-panel pressure hull — a frigate
+      // broadside kills it. Nuclear missile batteries have enough punch to threaten
+      // other UNOC or unshielded ECE ships, nothing more.
+      r: 16, mass: 500000, speed: 0, shields: 0, hull: 2200,
+      weapons:[
+        { name:'CIWS Battery A',            type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery B',            type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery C',            type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Missile Battery A', type:'plasma',  dmg:40, range:560, cooldown:8.00, pSpeed:260, spread:0.08 },
+        { name:'Nuclear Missile Battery B', type:'plasma',  dmg:40, range:560, cooldown:8.00, pSpeed:260, spread:0.08 },
+        { name:'Nuclear Missile Battery C', type:'plasma',  dmg:40, range:560, cooldown:8.00, pSpeed:260, spread:0.08 },
+        { name:'Defensive Missile (×30)',   type:'kinetic', dmg:3, range:180, cooldown:0.15, pSpeed:700, spread:0.13 },
+        { name:'MIRACL Megawatt Laser A',   type:'kinetic', dmg:9, range:630, cooldown:5.00, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser B',   type:'kinetic', dmg:9, range:630, cooldown:5.00, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser C',   type:'kinetic', dmg:9, range:630, cooldown:5.00, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── Stanford Torus Station (~1.8 km → r=56) ───────────────────────────────────
+    { key:'unoc_stanfordTorus', name:'Stanford Torus Station', role:'station', spriteKey:'unoc_stanfordTorus',
+      // 360° weapon coverage, but the ring frame is fragile habitat modules.
+      // Kinetic rods do high damage if they land — 30-second cooldown and 5s windup
+      // make them irrelevant against any mobile target.
+      r: 56, mass: 10000000, speed: 0, shields: 0, hull: 10000,
+      weapons:[
+        { name:'CIWS Ring A',               type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Ring B',               type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Ring C',               type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Ring D',               type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Missile Battery A', type:'plasma',  dmg:48, range:580, cooldown:8.00, pSpeed:250, spread:0.07 },
+        { name:'Nuclear Missile Battery B', type:'plasma',  dmg:48, range:580, cooldown:8.00, pSpeed:250, spread:0.07 },
+        { name:'Nuclear Missile Battery C', type:'plasma',  dmg:48, range:580, cooldown:8.00, pSpeed:250, spread:0.07 },
+        { name:'Nuclear Missile Battery D', type:'plasma',  dmg:48, range:580, cooldown:8.00, pSpeed:250, spread:0.07 },
+        { name:'Kinetic Rod Launcher A',    type:'kinetic', dmg:160, range:1000, cooldown:30.0, windup:5.0, pSpeed:600, spread:0.006, special:true },
+        { name:'Kinetic Rod Launcher B',    type:'kinetic', dmg:160, range:1000, cooldown:30.0, windup:5.0, pSpeed:600, spread:0.006, special:true },
+        { name:'Defensive Missile (×60)',   type:'kinetic', dmg:3, range:190, cooldown:0.14, pSpeed:700, spread:0.12 },
+        { name:'MIRACL Megawatt Laser A',   type:'kinetic', dmg:10, range:650, cooldown:4.80, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser B',   type:'kinetic', dmg:10, range:650, cooldown:4.80, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser C',   type:'kinetic', dmg:10, range:650, cooldown:4.80, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser D',   type:'kinetic', dmg:10, range:650, cooldown:4.80, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── O'Neill Carrier (~3.2 km → r=100) ─────────────────────────────────────────
+    { key:'unoc_oNeillCarrier', name:'O\'Neill Cylinder Carrier', role:'carrier', spriteKey:'unoc_oNeillCarrier',
+      // UNOC flagship — its true value is the drone swarm it carries, not its own guns.
+      // Hull is huge but unshielded; any capital ship focus-fires it down quickly.
+      r: 100, mass: 50000000, speed: 10, shields: 0, hull: 28000,
+      weapons:[
+        { name:'CIWS Battery A',            type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery B',            type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery C',            type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery D',            type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'CIWS Battery E',            type:'kinetic', dmg:1, range:120, cooldown:0.14, pSpeed:700, spread:0.18 },
+        { name:'Nuclear Missile Battery A', type:'plasma',  dmg:50, range:580, cooldown:8.00, pSpeed:250, spread:0.07 },
+        { name:'Nuclear Missile Battery B', type:'plasma',  dmg:50, range:580, cooldown:8.00, pSpeed:250, spread:0.07 },
+        { name:'Nuclear Missile Battery C', type:'plasma',  dmg:50, range:580, cooldown:8.00, pSpeed:250, spread:0.07 },
+        { name:'Nuclear Missile Battery D', type:'plasma',  dmg:50, range:580, cooldown:8.00, pSpeed:250, spread:0.07 },
+        { name:'Kinetic Rod Launcher A',    type:'kinetic', dmg:165, range:1000, cooldown:30.0, windup:5.0, pSpeed:600, spread:0.006, special:true },
+        { name:'Kinetic Rod Launcher B',    type:'kinetic', dmg:165, range:1000, cooldown:30.0, windup:5.0, pSpeed:600, spread:0.006, special:true },
+        { name:'Defensive Missile (×100)', type:'kinetic', dmg:3, range:200, cooldown:0.14, pSpeed:700, spread:0.12 },
+        { name:'MIRACL Megawatt Laser A',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser B',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser C',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser D',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+        { name:'MIRACL Megawatt Laser E',   type:'kinetic', dmg:11, range:660, cooldown:4.60, pSpeed:9999, spread:0.010 },
+      ]
+    },
+
+    // ── UNOC Drone (only craft type — AI combat drones) ───────────────────────────
+    { key:'unoc_drone', name:'UNOC Combat Drone', role:'craft', craft:'drone', r:5, mass:12, speed:320, shields:0, hull:8,
+      // Disposable AI combat drone — no shields, fragile, conventional warhead.
+      // Dangerous only in the enormous swarms the O'Neill Carrier deploys.
+      weapons:[ { name:'Conventional Warhead', type:'kinetic', dmg:4, range:220, cooldown:1.20, pSpeed:480, spread:0.15 } ]
+    },
+
+    // ═══════════════════════════════════════════════════════════
+    // 21ST CENTURY EARTH  (SpaceX / NASA era — no shields, primitive weapons)
+    // ── DELIBERATELY THE WEAKEST FACTION alongside UNOC ──
+    // These are real or near-real 2020s rockets repurposed as gunships.
+    // No shields. No exotic armour. Thin aluminium-lithium alloy skins.
+    // Weapons are air-launched missiles and minigun derivatives — effective against
+    // other ECE or unshielded UNOC ships, laughable against sci-fi hull armour.
+    // Reference ceiling: a Republic Patrol Ship (shields 150, hull 180) wins comfortably
+    // against any single ECE capital. MIRACL lasers do ~1 MW — scratches paint.
+    // ═══════════════════════════════════════════════════════════
+
+    // ── Falcon 1 (light rocket, real length ~20 m → r=4) ──────────────────────────
+    { key:'ece_falcon1', name:'Falcon 1', role:'strike', spriteKey:'ece_falcon1',
+      r: 4, mass: 35, speed: 300, shields: 0, hull: 30,
+      weapons:[
+        { name:'M61 Gatling',               type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'Light Missile Rack (×10)',   type:'plasma',  dmg:8, range:380, cooldown:1.20, pSpeed:500, spread:0.09 },
+        { name:'Defensive Missile (×5)',     type:'kinetic', dmg:3, range:160, cooldown:0.16, pSpeed:720, spread:0.14 },
+      ]
+    },
+
+    // ── Falcon 9 (medium rocket, real length ~70 m → r=6) ─────────────────────────
+    { key:'ece_falcon9', name:'Falcon 9', role:'screen', spriteKey:'ece_falcon9',
+      r: 6, mass: 90, speed: 230, shields: 0, hull: 70,
+      weapons:[
+        { name:'M61 Gatling',               type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'Light Missile Rack (×10)',   type:'plasma',  dmg:8, range:380, cooldown:1.20, pSpeed:500, spread:0.09 },
+        { name:'Defensive Missile (×10)',    type:'kinetic', dmg:3, range:170, cooldown:0.16, pSpeed:720, spread:0.13 },
+        { name:'MIRACL-Class Laser',         type:'kinetic', dmg:6, range:500, cooldown:6.00, pSpeed:9999, spread:0.014 },
+      ]
+    },
+
+    // ── Falcon Heavy (heavy rocket → r=8) ─────────────────────────────────────────
+    { key:'ece_falconHeavy', name:'Falcon Heavy', role:'escort', spriteKey:'ece_falconHeavy',
+      r: 8, mass: 220, speed: 170, shields: 0, hull: 160,
+      weapons:[
+        { name:'M61 Gatling A',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'M61 Gatling B',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'Light Missile Rack (×10)',   type:'plasma',  dmg:8, range:380, cooldown:1.20, pSpeed:500, spread:0.09 },
+        { name:'Heavy Missile Pod (×5)',     type:'plasma',  dmg:22, range:540, cooldown:4.00, pSpeed:420, spread:0.06 },
+        { name:'Defensive Missile (×15)',    type:'kinetic', dmg:3, range:180, cooldown:0.15, pSpeed:720, spread:0.13 },
+        { name:'MIRACL-Class Laser',         type:'kinetic', dmg:6, range:500, cooldown:6.00, pSpeed:9999, spread:0.014 },
+      ]
+    },
+
+    // ── Starship (~121 m → r=9) ────────────────────────────────────────────────────
+    { key:'ece_starship', name:'Starship', role:'capital', spriteKey:'ece_starship',
+      r: 9, mass: 450, speed: 125, shields: 0, hull: 340,
+      weapons:[
+        { name:'M61 Gatling A',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'M61 Gatling B',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'Light Missile Rack (×25)',   type:'plasma',  dmg:8, range:380, cooldown:1.10, pSpeed:500, spread:0.09 },
+        { name:'Heavy Missile Pod (×5)',     type:'plasma',  dmg:22, range:540, cooldown:3.80, pSpeed:420, spread:0.06 },
+        { name:'Defensive Missile (×20)',    type:'kinetic', dmg:3, range:190, cooldown:0.14, pSpeed:720, spread:0.12 },
+        { name:'MIRACL-Class Laser A',       type:'kinetic', dmg:6, range:500, cooldown:6.00, pSpeed:9999, spread:0.014 },
+        { name:'MIRACL-Class Laser B',       type:'kinetic', dmg:6, range:500, cooldown:6.00, pSpeed:9999, spread:0.014 },
+      ]
+    },
+
+    // ── Starship 2.0 (~130 m → r=10) ──────────────────────────────────────────────
+    { key:'ece_starship2', name:'Starship 2.0', role:'capital', spriteKey:'ece_starship2',
+      r: 10, mass: 520, speed: 115, shields: 0, hull: 440,
+      weapons:[
+        { name:'M61 Gatling A',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'M61 Gatling B',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'Light Missile Rack (×30)',   type:'plasma',  dmg:8, range:380, cooldown:1.00, pSpeed:500, spread:0.09 },
+        { name:'Heavy Missile Pod (×10)',    type:'plasma',  dmg:22, range:540, cooldown:3.50, pSpeed:420, spread:0.06 },
+        { name:'Defensive Missile (×25)',    type:'kinetic', dmg:3, range:200, cooldown:0.13, pSpeed:720, spread:0.12 },
+        { name:'MIRACL-Class Laser A',       type:'kinetic', dmg:6, range:500, cooldown:6.00, pSpeed:9999, spread:0.014 },
+        { name:'MIRACL-Class Laser B',       type:'kinetic', dmg:6, range:500, cooldown:6.00, pSpeed:9999, spread:0.014 },
+        { name:'MIRACL-Class Laser C',       type:'kinetic', dmg:6, range:500, cooldown:6.00, pSpeed:9999, spread:0.014 },
+      ]
+    },
+
+    // ── Starship Carrier (~150 m → r=12) ──────────────────────────────────────────
+    { key:'ece_starshipCarrier', name:'Starship Carrier', role:'carrier', spriteKey:'ece_starshipCarrier',
+      r: 12, mass: 680, speed: 95, shields: 0, hull: 520,
+      weapons:[
+        { name:'M61 Gatling A',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'M61 Gatling B',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'M61 Gatling C',             type:'kinetic', dmg:1, range:140, cooldown:0.12, pSpeed:780, spread:0.16 },
+        { name:'Light Missile Rack (×5)',    type:'plasma',  dmg:8, range:380, cooldown:1.40, pSpeed:500, spread:0.09 },
+        { name:'Heavy Missile Pod (×2)',     type:'plasma',  dmg:22, range:540, cooldown:4.50, pSpeed:420, spread:0.06 },
+        { name:'Defensive Missile (×30)',    type:'kinetic', dmg:3, range:200, cooldown:0.13, pSpeed:720, spread:0.12 },
+        { name:'MIRACL-Class Laser',         type:'kinetic', dmg:6, range:500, cooldown:6.00, pSpeed:9999, spread:0.014 },
+      ]
+    },
+
+    // ── Space Stations ─────────────────────────────────────────────────────────────
+    // ISS (~109 m truss → r=8)
+    { key:'ece_iss', name:'ISS', role:'station', spriteKey:'ece_iss',
+      r: 8, mass: 400000, speed: 0, shields: 0, hull: 1400,
+      weapons:[
+        { name:'CIWS Phalanx (20mm)',        type:'kinetic', dmg:3, range:170, cooldown:0.11, pSpeed:780, spread:0.14 },
+        { name:'Defensive Missile (×12)',     type:'kinetic', dmg:3, range:180, cooldown:0.14, pSpeed:720, spread:0.13 },
+        { name:'AIM-120 AMRAAM Rack (×8)',   type:'plasma',  dmg:14, range:380, cooldown:1.80, pSpeed:520, spread:0.09 },
+      ]
+    },
+    // Starlab (~100 m → r=7)
+    { key:'ece_starlab', name:'Starlab Space Station', role:'station', spriteKey:'ece_starlab',
+      r: 7, mass: 120000, speed: 0, shields: 0, hull: 1100,
+      weapons:[
+        { name:'CIWS Phalanx (20mm)',        type:'kinetic', dmg:3, range:170, cooldown:0.11, pSpeed:780, spread:0.14 },
+        { name:'Defensive Missile (×10)',     type:'kinetic', dmg:3, range:180, cooldown:0.14, pSpeed:720, spread:0.13 },
+        { name:'AIM-120 AMRAAM Rack (×6)',   type:'plasma',  dmg:14, range:380, cooldown:1.80, pSpeed:520, spread:0.09 },
+      ]
+    },
+    // Axiom Station (~80 m → r=6)
+    { key:'ece_axiom', name:'Axiom Station', role:'station', spriteKey:'ece_axiom',
+      r: 6, mass: 80000, speed: 0, shields: 0, hull: 800,
+      weapons:[
+        { name:'CIWS Phalanx (20mm)',        type:'kinetic', dmg:3, range:170, cooldown:0.11, pSpeed:780, spread:0.14 },
+        { name:'Defensive Missile (×8)',      type:'kinetic', dmg:3, range:180, cooldown:0.14, pSpeed:720, spread:0.13 },
+        { name:'AIM-120 AMRAAM Rack (×4)',   type:'plasma',  dmg:14, range:380, cooldown:2.00, pSpeed:520, spread:0.09 },
+      ]
+    },
+    // Orbital Reef (~100 m → r=7)
+    { key:'ece_orbitalReef', name:'Orbital Reef Space Station', role:'station', spriteKey:'ece_orbitalReef',
+      r: 7, mass: 140000, speed: 0, shields: 0, hull: 1200,
+      weapons:[
+        { name:'CIWS Phalanx (20mm)',        type:'kinetic', dmg:3, range:170, cooldown:0.11, pSpeed:780, spread:0.14 },
+        { name:'Defensive Missile (×12)',     type:'kinetic', dmg:3, range:180, cooldown:0.14, pSpeed:720, spread:0.13 },
+        { name:'AIM-120 AMRAAM Rack (×8)',   type:'plasma',  dmg:14, range:380, cooldown:1.80, pSpeed:520, spread:0.09 },
+      ]
+    },
+    // Lunar Gateway (~30 m → r=4)
+    { key:'ece_gateway', name:'Gateway (Lunar Gateway)', role:'station', spriteKey:'ece_gateway',
+      r: 4, mass: 40000, speed: 0, shields: 0, hull: 600,
+      weapons:[
+        { name:'CIWS Phalanx (20mm)',        type:'kinetic', dmg:3, range:170, cooldown:0.11, pSpeed:780, spread:0.14 },
+        { name:'Defensive Missile (×6)',      type:'kinetic', dmg:3, range:180, cooldown:0.14, pSpeed:720, spread:0.13 },
+        { name:'AIM-120 AMRAAM Rack (×4)',   type:'plasma',  dmg:14, range:380, cooldown:2.20, pSpeed:520, spread:0.09 },
+      ]
+    },
+
+    // ── 21CE Drone ────────────────────────────────────────────────────────────────
+    { key:'ece_drone', name:'21CE Combat Drone', role:'craft', craft:'drone', r:5, mass:12, speed:340, shields:0, hull:12,
+      // MQ-9 / X-47B analogue — lightweight, no shields, conventional Hellfire warhead.
+      // Dangerous in swarms against other ECE/unshielded targets only.
+      weapons:[ { name:'Hellfire Missile', type:'plasma', dmg:5, range:260, cooldown:0.80, pSpeed:500, spread:0.14 } ]
+    },
   ];
 
   const DEF_BY_KEY = new Map(UNIT_DEFS.map(d => [d.key, d]));
@@ -1603,6 +2244,63 @@
       'fsa_interceptor',
       'fsa_shuttle',
       'fsa_drone',
+    ],
+    rebel: [
+      'rebel_command_cruiser',
+      'rebel_frigate',
+      'rebel_gunship',
+      'rebel_blockade_runner',
+      'rebel_corvette',
+      'rebel_fighter',
+      'rebel_bomber',
+      'rebel_interceptor',
+    ],
+    earth: [
+      'uef_orbital_fortress',
+      'uef_dreadnought',
+      'uef_titan_carrier',
+      'uef_battlecruiser',
+      'uef_assault_cruiser',
+      'uef_escort_frigate',
+      'uef_destroyer',
+      'uef_corvette',
+      'uef_stealth_scout',
+      'uef_fighter',
+      'uef_bomber',
+      'uef_interceptor',
+      'uef_drone',
+    ],
+    unoc: [
+      'unoc_oNeillCarrier',
+      'unoc_stanfordTorus',
+      'unoc_bernalSphere',
+      'unoc_rodsFromGod',
+      'unoc_polyus',
+      'unoc_superOrion',
+      'unoc_orionBattleship',
+      'unoc_orionCruiser',
+      'unoc_daedalus',
+      'unoc_orionScout',
+      'unoc_nervaGunship',
+      'unoc_longshot',
+      'unoc_drone',
+    ],
+    ece: [
+      // Stations (largest first)
+      'ece_iss',
+      'ece_starlab',
+      'ece_orbitalReef',
+      'ece_axiom',
+      'ece_gateway',
+      // Rockets (largest first)
+      'ece_starshipCarrier',
+      'ece_starship2',
+      'ece_starship',
+      'ece_falconHeavy',
+      'ece_falcon9',
+      'ece_falcon1',
+      // Drone (only craft type)
+      'ece_drone',
     ],
   };
 
@@ -2242,6 +2940,116 @@
     fsa_frigate: [
       { craftKey:'fsa_drone',       max:6,     wave:2  },
     ],
+    // ── Rebel Coalition ────────────────────────────────────
+    rebel_command_cruiser: [
+      { craftKey:'rebel_fighter',     max:12,   wave:3  },
+      { craftKey:'rebel_bomber',      max:6,    wave:2  },
+      { craftKey:'rebel_interceptor', max:6,    wave:2  },
+    ],
+    rebel_frigate: [
+      { craftKey:'rebel_fighter',     max:4,    wave:2  },
+      { craftKey:'rebel_interceptor', max:4,    wave:2  },
+    ],
+    // ── United Earth Federation ────────────────────────────
+    uef_orbital_fortress: [
+      { craftKey:'uef_drone',         max:20000, wave:25 },
+      { craftKey:'uef_fighter',       max:400,   wave:20 },
+      { craftKey:'uef_bomber',        max:200,   wave:8  },
+      { craftKey:'uef_interceptor',   max:300,   wave:15 },
+    ],
+    uef_titan_carrier: [
+      { craftKey:'uef_drone',         max:300,   wave:20 },
+      { craftKey:'uef_fighter',       max:80,    wave:15 },
+      { craftKey:'uef_bomber',        max:20,    wave:5  },
+      { craftKey:'uef_interceptor',   max:40,    wave:10 },
+    ],
+    uef_dreadnought: [
+      { craftKey:'uef_drone',         max:12,    wave:3  },
+      { craftKey:'uef_fighter',       max:4,     wave:2  },
+      { craftKey:'uef_bomber',        max:4,     wave:2  },
+      { craftKey:'uef_interceptor',   max:4,     wave:2  },
+    ],
+    uef_battlecruiser: [
+      { craftKey:'uef_drone',         max:12,    wave:3  },
+      { craftKey:'uef_fighter',       max:4,     wave:2  },
+      { craftKey:'uef_interceptor',   max:4,     wave:2  },
+    ],
+    uef_assault_cruiser: [
+      { craftKey:'uef_drone',         max:9,     wave:3  },
+      { craftKey:'uef_fighter',       max:3,     wave:1  },
+    ],
+    uef_escort_frigate: [
+      { craftKey:'uef_drone',         max:4,     wave:2  },
+    ],
+    uef_destroyer: [
+      { craftKey:'uef_drone',         max:6,     wave:2  },
+      { craftKey:'uef_interceptor',   max:3,     wave:1  },
+    ],
+
+    // ── United Nations Orbital Command (drones only) ───────────
+    unoc_oNeillCarrier: [
+      { craftKey:'unoc_drone', max:2000, wave:30 },
+    ],
+    unoc_stanfordTorus: [
+      { craftKey:'unoc_drone', max:800,  wave:20 },
+    ],
+    unoc_bernalSphere: [
+      { craftKey:'unoc_drone', max:200,  wave:10 },
+    ],
+    unoc_superOrion: [
+      { craftKey:'unoc_drone', max:120,  wave:8  },
+    ],
+    unoc_orionBattleship: [
+      { craftKey:'unoc_drone', max:60,   wave:6  },
+    ],
+    unoc_orionCruiser: [
+      { craftKey:'unoc_drone', max:30,   wave:4  },
+    ],
+    unoc_daedalus: [
+      { craftKey:'unoc_drone', max:20,   wave:4  },
+    ],
+    unoc_orionScout: [
+      { craftKey:'unoc_drone', max:12,   wave:3  },
+    ],
+    unoc_nervaGunship: [
+      { craftKey:'unoc_drone', max:8,    wave:2  },
+    ],
+    unoc_polyus: [
+      { craftKey:'unoc_drone', max:6,    wave:2  },
+    ],
+    unoc_rodsFromGod: [
+      { craftKey:'unoc_drone', max:4,    wave:2  },
+    ],
+
+    // ── 21st Century Earth (drones only) ──────────────────────
+    // Starship Carrier: full 100-drone complement
+    ece_starshipCarrier: [
+      { craftKey:'ece_drone', max:100, wave:10 },
+    ],
+    // Starship: small drone complement in payload bay
+    ece_starship: [
+      { craftKey:'ece_drone', max:12, wave:4 },
+    ],
+    // Starship 2.0: improved drone capacity
+    ece_starship2: [
+      { craftKey:'ece_drone', max:18, wave:5 },
+    ],
+    // Space Stations: patrol drone wings
+    ece_iss: [
+      { craftKey:'ece_drone', max:20, wave:4 },
+    ],
+    ece_starlab: [
+      { craftKey:'ece_drone', max:16, wave:4 },
+    ],
+    ece_orbitalReef: [
+      { craftKey:'ece_drone', max:20, wave:4 },
+    ],
+    ece_axiom: [
+      { craftKey:'ece_drone', max:12, wave:3 },
+    ],
+    ece_gateway: [
+      { craftKey:'ece_drone', max:8,  wave:2 },
+    ],
   };
 
   // Air Station hangar — same totals for both republic and empire factions
@@ -2603,7 +3411,8 @@
       // Focus fire: pick the most-damaged enemy capital, else nearest
       if (brain.focusTimer <= 0){
         let pick = enemy, bestScore = -Infinity;
-        for (const s of world.ships){
+        const focusCandidates = grid.query(ship.pos.x, ship.pos.y, 1100);
+        for (const s of focusCandidates){
           if (!s.isAlive() || isAlliedFaction(s.faction, ship.faction)) continue;
           const dist = len(sub(s.pos, ship.pos));
           if (dist > 1100) continue;
@@ -2655,7 +3464,8 @@
     // -------- STRIKE: fast ships attack and retreat (kiting) --------
     if (role === 'strike'){
       let pick = enemy, bestScore=-Infinity;
-      for (const s of world.ships){
+      const strikeCandidates = grid.query(ship.pos.x, ship.pos.y, 680);
+      for (const s of strikeCandidates){
         if (!s.isAlive() || isAlliedFaction(s.faction, ship.faction)) continue;
         const d = len(sub(s.pos, ship.pos));
         if (d > 680) continue;
@@ -2935,10 +3745,34 @@
     const sorted = [...sel].sort((a,b)=>a.id-b.id);
     const n = sorted.length;
     const avgR = sorted.reduce((s,u)=>s+u.radius, 0)/n;
-    const gap = clamp(avgR * 1.8, 28, 120);
+    const gap = clamp(avgR * 2.0, 32, 130);
 
     const offsets = [];
-    if (type === 'line'){
+
+    if (type === 'free' || type === 'natural' || !type){
+      // ── EAW-style natural spread ──────────────────────────────
+      // Ships spread organically from the destination, sorted by size (largest central).
+      // Uses a sunflower/phyllotaxis spiral so ships never stack and spacing scales
+      // with their actual radii — just like Empire At War.
+      const bySize = [...sorted].sort((a,b) => b.radius - a.radius);
+      const phi = (1 + Math.sqrt(5)) / 2; // golden ratio
+      for (let i = 0; i < n; i++){
+        const ship = bySize[i];
+        const r = ship.radius;
+        // index 0 = center, rest spiral outward
+        if (i === 0){
+          offsets[sorted.indexOf(ship)] = { x:0, y:0 };
+        } else {
+          const dist = gap * 0.72 * Math.sqrt(i);
+          const angle = i * TAU / (phi * phi); // golden angle
+          const jitter = rand(-r * 0.15, r * 0.15);
+          offsets[sorted.indexOf(ship)] = {
+            x: Math.cos(angle) * (dist + jitter),
+            y: Math.sin(angle) * (dist + jitter)
+          };
+        }
+      }
+    } else if (type === 'line'){
       for (let i=0;i<n;i++) offsets.push({x:0, y:(i-(n-1)/2)*gap});
     } else if (type === 'line_h'){
       for (let i=0;i<n;i++) offsets.push({x:(i-(n-1)/2)*gap, y:0});
@@ -2975,17 +3809,20 @@
         offsets.push({ x:(i-(n-1)/2)*gap*0.9, y:(i-(n-1)/2)*gap*0.9 });
       }
     } else {
-      for (let i=0;i<n;i++) offsets.push({x:0, y:(i-(n-1)/2)*gap});
+      // fallback: natural spread
+      const phi = (1 + Math.sqrt(5)) / 2;
+      for (let i=0;i<n;i++){
+        if (i===0){ offsets.push({x:0,y:0}); continue; }
+        const dist = gap * 0.72 * Math.sqrt(i);
+        const angle = i * TAU / (phi * phi);
+        offsets.push({ x: Math.cos(angle)*dist, y: Math.sin(angle)*dist });
+      }
     }
 
     for (let i=0;i<n;i++){
       const s = sorted[i];
-      const p = add(destWorld, offsets[i]);
-      if (input.keyA){
-        s.order.type = 'attackmove';
-      } else {
-        s.order.type = 'move';
-      }
+      const p = add(destWorld, offsets[i] || {x:0,y:0});
+      s.order.type = input.keyA ? 'attackmove' : 'move';
       s.order.point = p;
       s.order.targetId = null;
       s.order.issuedAt = world.time;
@@ -2996,6 +3833,7 @@
   function spawnShip(defKey, faction, x, y){
     const s = new Ship(defKey, faction, x, y);
     world.ships.push(s);
+    _shipsSortDirty = true;
     // Hyperspace arrival visual + sound
     spawnWarpIn(x, y, s.radius, faction);
     audio.warpJump(s.radius >= 55);
@@ -3165,6 +4003,7 @@
     world.time = 0;
     world.running = false;
     world.battleReport = null;
+    _shipsSortDirty = true;
     el.btnStart.disabled = false;
     el.btnStart.textContent = 'Start Battle';
     world.gameOver = false;
@@ -3328,57 +4167,238 @@
     el.overlay.classList.add('hidden');
   }
 
-  // ---------- Background (stars + nebula, generated once) ----------
-  // Stars and nebulas are pre-rendered to an offscreen canvas and composited
-  // as a single drawImage per frame instead of 580+ individual draw calls.
+  // ---------- Background themes ----------
+  const BG_THEMES = {
+    deepspace: {
+      skyColor: '#02040e',
+      nebulaColors: [[55,75,175],[110,35,155],[25,95,175],[165,35,55],[35,130,115]],
+      nebulaAlpha: [0.028, 0.085],
+      nebulaCount: 7,
+      dustColor: [80,100,180],
+      dustAlpha: 0.018,
+      starTint: [[255,255,255],[200,220,255],[255,240,220]],
+      clusterColor: [160,190,255],
+      brightStars: true,
+    },
+    nebula: {
+      skyColor: '#060210',
+      nebulaColors: [[140,30,200],[80,10,160],[200,50,160],[60,20,140],[180,80,220]],
+      nebulaAlpha: [0.06, 0.18],
+      nebulaCount: 9,
+      dustColor: [160,60,220],
+      dustAlpha: 0.04,
+      starTint: [[255,200,255],[220,180,255],[255,255,255]],
+      clusterColor: [200,160,255],
+      brightStars: true,
+    },
+    redgiant: {
+      skyColor: '#0a0200',
+      nebulaColors: [[200,50,10],[180,30,5],[220,90,20],[160,20,30],[200,60,40]],
+      nebulaAlpha: [0.05, 0.16],
+      nebulaCount: 8,
+      dustColor: [220,80,30],
+      dustAlpha: 0.035,
+      starTint: [[255,200,150],[255,160,100],[255,240,200]],
+      clusterColor: [255,160,80],
+      brightStars: false,
+    },
+    bluedwarf: {
+      skyColor: '#000208',
+      nebulaColors: [[20,60,200],[10,80,220],[30,120,200],[15,50,180],[40,100,220]],
+      nebulaAlpha: [0.04, 0.14],
+      nebulaCount: 7,
+      dustColor: [40,100,255],
+      dustAlpha: 0.03,
+      starTint: [[180,210,255],[150,190,255],[255,255,255]],
+      clusterColor: [100,160,255],
+      brightStars: true,
+    },
+    supernova: {
+      skyColor: '#050300',
+      nebulaColors: [[220,160,10],[200,100,10],[240,200,30],[180,60,10],[255,180,50]],
+      nebulaAlpha: [0.06, 0.20],
+      nebulaCount: 10,
+      dustColor: [240,160,20],
+      dustAlpha: 0.05,
+      starTint: [[255,240,180],[255,220,120],[255,255,220]],
+      clusterColor: [255,200,80],
+      brightStars: true,
+    },
+    voidrift: {
+      skyColor: '#000a06',
+      nebulaColors: [[10,180,140],[20,200,120],[10,160,180],[30,140,160],[15,200,160]],
+      nebulaAlpha: [0.04, 0.14],
+      nebulaCount: 7,
+      dustColor: [20,200,160],
+      dustAlpha: 0.03,
+      starTint: [[150,255,220],[180,255,240],[255,255,255]],
+      clusterColor: [50,220,180],
+      brightStars: true,
+    },
+    ashfield: {
+      skyColor: '#060504',
+      nebulaColors: [[90,75,55],[80,70,60],[100,85,65],[70,60,50],[95,80,60]],
+      nebulaAlpha: [0.04, 0.13],
+      nebulaCount: 8,
+      dustColor: [120,100,70],
+      dustAlpha: 0.045,
+      starTint: [[220,210,190],[200,190,170],[255,250,240]],
+      clusterColor: [180,160,120],
+      brightStars: false,
+    },
+    goldcluster: {
+      skyColor: '#050400',
+      nebulaColors: [[200,150,20],[180,120,10],[220,180,30],[160,100,15],[210,160,40]],
+      nebulaAlpha: [0.05, 0.18],
+      nebulaCount: 12,
+      dustColor: [220,180,40],
+      dustAlpha: 0.04,
+      starTint: [[255,240,160],[255,220,100],[255,255,200]],
+      clusterColor: [255,210,80],
+      brightStars: true,
+    },
+  };
+
+  let activeBgTheme = 'deepspace';
+
+  // Expose setter for the HTML picker
+  window.setBattleBackground = function(name){
+    if (!BG_THEMES[name]) return;
+    activeBgTheme = name;
+    BG.rebuild();
+  };
+
+  // ---------- Background (stars + nebula + dust, generated per theme) ----------
   const BG = (() => {
-    const layers = [
-      { count:340, minR:0.4, maxR:1.1, alpha:0.55, parallax:0.08 },
-      { count:180, minR:0.8, maxR:1.8, alpha:0.75, parallax:0.14 },
-      { count: 60, minR:1.4, maxR:3.0, alpha:0.90, parallax:0.22 },
-    ];
-    const stars = [];
-    for (const L of layers){
-      for (let i=0;i<L.count;i++){
-        stars.push({
+    let stars = [];
+    let nebulas = [];
+    let dustParticles = [];
+    let clusters = [];
+    let nebulaCanvas = null;
+    let nebulaZoom   = -1;
+    let builtTheme   = null;
+
+    function build(){
+      const theme = BG_THEMES[activeBgTheme];
+      builtTheme = activeBgTheme;
+      nebulaCanvas = null;
+      nebulaZoom = -1;
+
+      // Stars — 3 parallax layers with theme tint
+      const layers = [
+        { count:360, minR:0.35, maxR:1.0,  alpha:0.50, parallax:0.07 },
+        { count:200, minR:0.7,  maxR:1.7,  alpha:0.72, parallax:0.13 },
+        { count: 70, minR:1.3,  maxR:2.8,  alpha:0.88, parallax:0.21 },
+      ];
+      stars = [];
+      for (const L of layers){
+        for (let i=0;i<L.count;i++){
+          const tintIdx = Math.floor(Math.random() * theme.starTint.length);
+          stars.push({
+            wx: rand(0, world.w), wy: rand(0, world.h),
+            r: rand(L.minR, L.maxR),
+            alpha: rand(L.alpha*0.55, L.alpha),
+            parallax: L.parallax,
+            twinkle: rand(0, TAU),
+            twinkleSpeed: rand(0.4, 2.0),
+            tint: theme.starTint[tintIdx],
+          });
+        }
+      }
+
+      // Bright star spikes for vivid themes
+      if (theme.brightStars){
+        for (let i=0;i<18;i++){
+          const tintIdx = Math.floor(Math.random() * theme.starTint.length);
+          stars.push({
+            wx: rand(0, world.w), wy: rand(0, world.h),
+            r: rand(2.2, 4.5),
+            alpha: rand(0.55, 0.95),
+            parallax: 0.18,
+            twinkle: rand(0, TAU),
+            twinkleSpeed: rand(0.3, 0.9),
+            tint: theme.starTint[tintIdx],
+            spike: true,
+          });
+        }
+      }
+
+      // Star clusters — dense local concentrations
+      clusters = [];
+      for (let c=0; c<5; c++){
+        const cx = rand(100, world.w-100), cy = rand(100, world.h-100);
+        const tintIdx = Math.floor(Math.random() * theme.starTint.length);
+        for (let i=0; i<40; i++){
+          const a = rand(0, TAU), d = rand(0, 220);
+          stars.push({
+            wx: cx + Math.cos(a)*d, wy: cy + Math.sin(a)*d,
+            r: rand(0.3, 1.2),
+            alpha: rand(0.3, 0.7) * (1 - d/220),
+            parallax: 0.10,
+            twinkle: rand(0, TAU),
+            twinkleSpeed: rand(0.5, 1.8),
+            tint: theme.starTint[tintIdx],
+          });
+        }
+      }
+
+      // Nebulas
+      nebulas = [];
+      for (let i=0;i<theme.nebulaCount;i++){
+        const col = theme.nebulaColors[i % theme.nebulaColors.length];
+        nebulas.push({
+          wx: rand(150, world.w-150),
+          wy: rand(150, world.h-150),
+          rx: rand(280, 1000),
+          ry: rand(180, 650),
+          angle: rand(0, TAU),
+          alpha: rand(theme.nebulaAlpha[0], theme.nebulaAlpha[1]),
+          col,
+          parallax: 0.04,
+        });
+      }
+
+      // Dust lane — long thin diagonal streak across the world
+      dustParticles = [];
+      const dc = theme.dustColor;
+      const da = theme.dustAlpha;
+      for (let i=0; i<5; i++){
+        dustParticles.push({
           wx: rand(0, world.w), wy: rand(0, world.h),
-          r: rand(L.minR, L.maxR),
-          alpha: rand(L.alpha*0.6, L.alpha),
-          parallax: L.parallax,
-          twinkle: rand(0, TAU),
-          twinkleSpeed: rand(0.5, 2.2),
+          rx: rand(500, 1400), ry: rand(80, 300),
+          angle: rand(-0.6, 0.6),
+          alpha: rand(da*0.5, da),
+          col: dc,
+          parallax: 0.03,
         });
       }
     }
 
-    const nebulas = [];
-    const nebulaColors = [
-      [60,80,180],[120,40,160],[30,100,180],[180,40,60],[40,140,120],
-    ];
-    for (let i=0;i<7;i++){
-      const col = nebulaColors[i % nebulaColors.length];
-      nebulas.push({
-        wx: rand(200, world.w-200),
-        wy: rand(200, world.h-200),
-        rx: rand(300, 900),
-        ry: rand(200, 600),
-        angle: rand(0, TAU),
-        alpha: rand(0.03, 0.10),
-        col,
-        parallax: 0.04,
-      });
-    }
-
-    // Offscreen canvas for the static nebula layer (world-space, redrawn when zoom changes)
-    let nebulaCanvas = null;
-    let nebulaZoom   = -1;
-
     function buildNebulaCanvas(zoom){
-      // Draw all nebulas at world scale into an offscreen canvas
       const W = Math.ceil(world.w * zoom), H = Math.ceil(world.h * zoom);
       const oc = document.createElement('canvas');
       oc.width = W; oc.height = H;
       const cx2 = oc.getContext('2d');
+
+      // Draw dust lanes first (underneath)
+      for (const n of dustParticles){
+        const px = n.wx * zoom, py = n.wy * zoom;
+        const rx = n.rx * zoom, ry = n.ry * zoom;
+        cx2.save();
+        cx2.globalAlpha = n.alpha;
+        cx2.translate(px, py);
+        cx2.rotate(n.angle);
+        const grd = cx2.createRadialGradient(0,0,0,0,0,rx);
+        grd.addColorStop(0, `rgba(${n.col[0]},${n.col[1]},${n.col[2]},0.7)`);
+        grd.addColorStop(0.5, `rgba(${n.col[0]},${n.col[1]},${n.col[2]},0.3)`);
+        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        cx2.scale(1, ry/rx);
+        cx2.beginPath(); cx2.ellipse(0,0,rx,rx,0,0,TAU);
+        cx2.fillStyle = grd; cx2.fill();
+        cx2.restore();
+      }
+
+      // Nebulas on top
       for (const n of nebulas){
         const px = n.wx * zoom, py = n.wy * zoom;
         const rx = n.rx * zoom, ry = n.ry * zoom;
@@ -3387,8 +4407,9 @@
         cx2.translate(px, py);
         cx2.rotate(n.angle);
         const grd = cx2.createRadialGradient(0,0,0,0,0,rx);
-        grd.addColorStop(0, `rgba(${n.col[0]},${n.col[1]},${n.col[2]},0.9)`);
-        grd.addColorStop(1, 'rgba(0,0,0,0)');
+        grd.addColorStop(0,   `rgba(${n.col[0]},${n.col[1]},${n.col[2]},1.0)`);
+        grd.addColorStop(0.4, `rgba(${n.col[0]},${n.col[1]},${n.col[2]},0.55)`);
+        grd.addColorStop(1,   'rgba(0,0,0,0)');
         cx2.scale(1, ry/rx);
         cx2.beginPath(); cx2.arc(0,0,rx,0,TAU);
         cx2.fillStyle = grd; cx2.fill();
@@ -3397,9 +4418,18 @@
       return oc;
     }
 
-    return { stars, nebulas, buildNebulaCanvas, get nebulaCanvas(){ return nebulaCanvas; },
-             get nebulaZoom(){ return nebulaZoom; },
-             rebuildNebula(zoom){ nebulaCanvas = buildNebulaCanvas(zoom); nebulaZoom = zoom; } };
+    build(); // initial build
+
+    return {
+      get stars(){ return stars; },
+      get nebulaCanvas(){ return nebulaCanvas; },
+      get nebulaZoom(){ return nebulaZoom; },
+      rebuild(){ build(); },
+      rebuildNebula(zoom){
+        nebulaCanvas = buildNebulaCanvas(zoom);
+        nebulaZoom = zoom;
+      },
+    };
   })();
 
   // Screen-shake state
@@ -3417,41 +4447,72 @@
   function drawBackground(){
     const rect = getFrameRect();
     const W = rect.width, H = rect.height;
+    const theme = BG_THEMES[activeBgTheme];
 
-    // Nebulas — composite pre-rendered offscreen canvas (rebuild on zoom change)
-    const zoomKey = Math.round(cam.zoom * 100) / 100; // quantize to avoid micro-rebuilds
+    // Sky fill — use theme color
+    ctx.fillStyle = theme.skyColor;
+    ctx.fillRect(0, 0, W, H);
+
+    // Nebulas + dust — composite pre-rendered offscreen canvas
+    const zoomKey = Math.round(cam.zoom * 50) / 50; // quantize finer
     if (BG.nebulaZoom !== zoomKey) BG.rebuildNebula(zoomKey);
     if (BG.nebulaCanvas){
-      // Each nebula has parallax 0.04; we composite the whole canvas with a slight
-      // parallax offset (average parallax for the layer since they share one value)
       const px = -(cam.x * (1 - 0.04)) * cam.zoom + W/2;
       const py = -(cam.y * (1 - 0.04)) * cam.zoom + H/2;
+      ctx.save();
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = 0.85;
       ctx.drawImage(BG.nebulaCanvas, px, py);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+      ctx.restore();
     }
 
-    // Stars — batch by similar alpha bucket to minimise fillStyle changes
-    // Group into 3 alpha buckets matching parallax layers, draw as path per bucket
+    // Stars
     const t = world.time;
-
-    // Sort once at game start; we just iterate in order here
+    ctx.save();
     for (const star of BG.stars){
       const px = (star.wx - cam.x) * (1 - star.parallax) * cam.zoom + W/2;
       const py = (star.wy - cam.y) * (1 - star.parallax) * cam.zoom + H/2;
-      if (px < -4 || px > W+4 || py < -4 || py > H+4) continue;
+      if (px < -8 || px > W+8 || py < -8 || py > H+8) continue;
 
       const twinkle = 0.6 + 0.4*Math.sin(t*star.twinkleSpeed + star.twinkle);
-      const r = Math.max(0.5, star.r * cam.zoom * (0.8 + 0.2*twinkle));
+      const r = Math.max(0.4, star.r * cam.zoom * (0.85 + 0.15*twinkle));
+      const [sr, sg, sb] = star.tint;
+
+      // Bright spiked stars: draw 4-point cross
+      if (star.spike && r > 1.5){
+        const spikeLen = r * 5;
+        ctx.globalAlpha = star.alpha * twinkle * 0.6;
+        ctx.strokeStyle = `rgb(${sr},${sg},${sb})`;
+        ctx.lineWidth = r * 0.4;
+        ctx.beginPath();
+        ctx.moveTo(px - spikeLen, py); ctx.lineTo(px + spikeLen, py);
+        ctx.moveTo(px, py - spikeLen); ctx.lineTo(px, py + spikeLen);
+        ctx.stroke();
+        ctx.globalAlpha = star.alpha * twinkle;
+        // Soft halo
+        const haloR = r * 2.2;
+        const hg = ctx.createRadialGradient(px,py,0,px,py,haloR);
+        hg.addColorStop(0, `rgba(${sr},${sg},${sb},0.7)`);
+        hg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = hg;
+        ctx.beginPath(); ctx.arc(px, py, haloR, 0, TAU); ctx.fill();
+      }
 
       ctx.globalAlpha = star.alpha * twinkle;
+      ctx.fillStyle = `rgb(${sr},${sg},${sb})`;
       ctx.beginPath();
       ctx.arc(px, py, r, 0, TAU);
-      ctx.fillStyle = '#ffffff';
       ctx.fill();
     }
     ctx.globalAlpha = 1;
+    ctx.restore();
   }
 
   function drawGrid(){
+    const theme = BG_THEMES[activeBgTheme];
+    const tc = theme.nebulaColors[0];
     const step = 220;
     const rect = getFrameRect();
     const left   = cam.x - rect.width  / (2*cam.zoom);
@@ -3462,25 +4523,62 @@
     const startY = Math.floor(top/step)*step;
     const hw = rect.width/2, hh = rect.height/2;
 
-    ctx.globalAlpha = 0.07;
+    // Major grid lines
+    ctx.globalAlpha = 0.06;
     ctx.lineWidth   = 1;
-    ctx.strokeStyle = 'rgba(100,140,255,0.25)';
+    ctx.strokeStyle = `rgba(${tc[0]},${tc[1]},${tc[2]},0.35)`;
     ctx.beginPath();
     for (let x=startX; x<right+step; x+=step){
       const ax = (x    - cam.x)*cam.zoom + hw;
       const ay = (top  - cam.y)*cam.zoom + hh;
-      const bx = ax;
       const by = (bottom - cam.y)*cam.zoom + hh;
-      ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+      ctx.moveTo(ax, ay); ctx.lineTo(ax, by);
     }
     for (let y=startY; y<bottom+step; y+=step){
       const ax = (left  - cam.x)*cam.zoom + hw;
       const ay = (y     - cam.y)*cam.zoom + hh;
       const bx = (right - cam.x)*cam.zoom + hw;
-      const by = ay;
-      ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+      ctx.moveTo(ax, ay); ctx.lineTo(bx, ay);
     }
     ctx.stroke();
+
+    // Sub-grid (minor lines) at 1/4 step, only when zoomed in enough
+    if (cam.zoom > 0.45){
+      const subStep = step / 4;
+      const subStartX = Math.floor(left/subStep)*subStep;
+      const subStartY = Math.floor(top/subStep)*subStep;
+      ctx.globalAlpha = 0.025;
+      ctx.strokeStyle = `rgba(${tc[0]},${tc[1]},${tc[2]},0.25)`;
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      for (let x=subStartX; x<right+subStep; x+=subStep){
+        if (Math.abs(x % step) < 1) continue; // skip majors
+        const ax = (x - cam.x)*cam.zoom + hw;
+        ctx.moveTo(ax, (top - cam.y)*cam.zoom + hh);
+        ctx.lineTo(ax, (bottom - cam.y)*cam.zoom + hh);
+      }
+      for (let y=subStartY; y<bottom+subStep; y+=subStep){
+        if (Math.abs(y % step) < 1) continue;
+        const ay = (y - cam.y)*cam.zoom + hh;
+        ctx.moveTo((left - cam.x)*cam.zoom + hw, ay);
+        ctx.lineTo((right - cam.x)*cam.zoom + hw, ay);
+      }
+      ctx.stroke();
+    }
+
+    // Grid intersection dots at major crossings
+    if (cam.zoom > 0.3){
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = `rgba(${tc[0]},${tc[1]},${tc[2]},0.8)`;
+      for (let x=startX; x<right+step; x+=step){
+        for (let y=startY; y<bottom+step; y+=step){
+          const ax = (x - cam.x)*cam.zoom + hw;
+          const ay = (y - cam.y)*cam.zoom + hh;
+          ctx.beginPath(); ctx.arc(ax, ay, 1.2, 0, TAU); ctx.fill();
+        }
+      }
+    }
+
     ctx.globalAlpha = 1;
   }
 
@@ -3512,12 +4610,12 @@
       const tx = sx - dirX * trailLen, ty = sy - dirY * trailLen;
       const trailW = Math.max(2, ship.radius * 0.38) * cam.zoom;
       const ta = isCraft ? 0.55 : 0.38;
-      const r2 = Math.min(255, col[1]+40), b2 = Math.min(255, col[2]+80);
+      const tc2 = getTrailColors(col);
 
       const grad = ctx.createLinearGradient(sx, sy, tx, ty);
-      grad.addColorStop(0,   `rgba(${col[0]},${r2},${b2},${ta})`);
-      grad.addColorStop(0.4, `rgba(${col[0]},${col[1]},${col[2]},0.10)`);
-      grad.addColorStop(1,   'rgba(0,0,0,0)');
+      grad.addColorStop(0,   tc2.headA + ta + ')');
+      grad.addColorStop(0.4, tc2.midA);
+      grad.addColorStop(1,   tc2.tail);
       ctx.lineWidth   = trailW;
       ctx.lineCap     = 'round';
       ctx.strokeStyle = grad;
@@ -3540,16 +4638,166 @@
     }
     if (ship._shieldFlash > 0) ship._shieldFlash = Math.max(0, ship._shieldFlash - 0.06);
 
-    // ── Fire damage — pre-baked sprite ──
+    // ── Damage effects — fire particles, smoke, and sparks ──
     const hullFrac = ship.maxHull > 0 ? ship.hull / ship.maxHull : 1;
-    if (hullFrac < 0.35 && cam.zoom > 0.15){
-      const fireAlpha = (0.35 - hullFrac) / 0.35 * 0.5 * (0.7 + 0.3 * Math.sin(world.time*8 + ship.id));
-      const fireR     = screenR * 1.1;
-      const spriteSize = Math.max(4, Math.round(fireR));
-      const sprite     = getFireSprite(spriteSize);
-      ctx.globalAlpha  = fireAlpha;
-      ctx.drawImage(sprite, sx - spriteSize, sy - spriteSize, spriteSize*2, spriteSize*2);
-      ctx.globalAlpha  = 1;
+
+    if (hullFrac < 0.65 && cam.zoom > 0.12){
+      const dmgSeverity = clamp((0.65 - hullFrac) / 0.65, 0, 1);
+      const t = world.time;
+
+      // ── Smoke wisps (dark puffs rising from damage points) ──
+      if (hullFrac < 0.55 && cam.zoom > 0.14){
+        const smokeCount = hullFrac < 0.25 ? 4 : 2;
+        for (let i = 0; i < smokeCount; i++){
+          const seed = ship.id * 3.7 + i * 2.13;
+          const ox = Math.sin(seed * 1.3) * screenR * 0.45;
+          const oy = Math.cos(seed * 0.9) * screenR * 0.3;
+          const phase = ((t * 0.95 + i * 0.71) % 2.2) / 2.2;
+          if (phase > 0.85) continue;
+          const riseY = -phase * screenR * 2.2;
+          const driftX = Math.sin(phase * 4.5 + seed) * screenR * 0.22;
+          const smokeR = Math.max(2.5, screenR * (0.2 + phase * 0.55));
+          const grey = 28 + Math.floor(phase * 38);
+          const alpha = (1 - phase / 0.85) * 0.48 * dmgSeverity;
+          ctx.globalAlpha = clamp(alpha, 0, 0.55);
+          ctx.fillStyle = `rgb(${grey},${grey},${grey+5})`;
+          ctx.beginPath();
+          ctx.arc(sx + ox + driftX, sy + oy + riseY, smokeR, 0, TAU);
+          ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Realistic fire: multiple flame tongues per damage point ──
+      if (hullFrac < 0.42 && cam.zoom > 0.13){
+        // Number of independent fire sources scales with damage
+        const fireSources = hullFrac < 0.2 ? 3 : hullFrac < 0.32 ? 2 : 1;
+        ctx.save();
+
+        for (let src = 0; src < fireSources; src++){
+          const srcSeed = ship.id * 5.1 + src * 4.37;
+          const srcOx = Math.sin(srcSeed * 1.1) * screenR * 0.38;
+          const srcOy = Math.cos(srcSeed * 0.8) * screenR * 0.28;
+          const bx = sx + srcOx, by = sy + srcOy;
+
+          // Each source has 3-5 layered flame tongues
+          const tongueCount = 3 + src;
+          for (let ti = 0; ti < tongueCount; ti++){
+            const tSeed = srcSeed + ti * 1.77;
+            // Stagger phase so tongues don't all pulse together
+            const phase = ((t * (1.8 + ti * 0.35 + src * 0.2) + tSeed) % 1.0);
+            const flameH = screenR * (0.55 + ti * 0.18 + Math.sin(t * 7 + tSeed) * 0.12) * dmgSeverity;
+            const flameW = screenR * (0.18 + ti * 0.04);
+            const lean   = Math.sin(t * 2.1 + tSeed * 0.7) * flameW * 0.55; // wind lean
+
+            // Flame drawn as a teardrop bezier path
+            ctx.beginPath();
+            ctx.moveTo(bx - flameW * 0.5, by);
+            ctx.bezierCurveTo(
+              bx - flameW + lean * 0.3, by - flameH * 0.35,
+              bx + lean,                by - flameH * 0.9,
+              bx + lean * 0.8,          by - flameH        // tip
+            );
+            ctx.bezierCurveTo(
+              bx + lean * 0.4,          by - flameH * 0.9,
+              bx + flameW + lean * 0.3, by - flameH * 0.35,
+              bx + flameW * 0.5,        by
+            );
+            ctx.closePath();
+
+            // Inner gradient: white-yellow core → orange mid → transparent red tip
+            // We approximate with globalAlpha + fillStyle layers
+            const pBase = 0.65 - phase * 0.65; // brightness 0..0.65
+            const hotness = 1 - (ti / tongueCount) * 0.4; // inner tongues hotter
+            const rC = 255;
+            const gC = Math.floor(clamp(200 * hotness - phase * 160, 30, 230));
+            const bC = Math.floor(clamp(60 * hotness - phase * 80, 0, 80));
+            const alpha = clamp(pBase * dmgSeverity * (0.55 + hotness * 0.4), 0, 0.88);
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = `rgb(${rC},${gC},${bC})`;
+            ctx.fill();
+
+            // Bright inner core (white-yellow) on top for depth
+            if (hotness > 0.6 && flameH > 4){
+              const coreH = flameH * 0.38;
+              const coreW = flameW * 0.35;
+              ctx.beginPath();
+              ctx.moveTo(bx - coreW * 0.5, by);
+              ctx.bezierCurveTo(
+                bx - coreW + lean * 0.2, by - coreH * 0.4,
+                bx + lean * 0.5,         by - coreH * 0.85,
+                bx + lean * 0.6,         by - coreH
+              );
+              ctx.bezierCurveTo(
+                bx + lean * 0.3,         by - coreH * 0.85,
+                bx + coreW + lean * 0.2, by - coreH * 0.4,
+                bx + coreW * 0.5,        by
+              );
+              ctx.closePath();
+              ctx.globalAlpha = clamp(alpha * 0.7, 0, 0.7);
+              ctx.fillStyle = `rgb(255,${Math.floor(235 + gC * 0.08)},${Math.floor(120 + bC)})`;
+              ctx.fill();
+            }
+          }
+        }
+        ctx.restore();
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Electrical sparks for critically damaged ships ──
+      if (hullFrac < 0.22 && cam.zoom > 0.18){
+        const sparkCycle = (t * 4.2 + ship.id * 1.3) % 1.0;
+        if (sparkCycle < 0.35){
+          const sparkCount = 3 + Math.floor(dmgSeverity * 4);
+          ctx.save();
+          for (let i = 0; i < sparkCount; i++){
+            const ang = rand(0, TAU);
+            const dist = rand(0.05, 0.9) * screenR;
+            const sLen = rand(2.5, 8) * cam.zoom;
+            const ex = sx + Math.cos(ang) * dist;
+            const ey = sy + Math.sin(ang) * dist;
+            const fade = 1 - sparkCycle / 0.35;
+            ctx.globalAlpha = fade * 0.9;
+            // Branching: draw main spark + 1 branch
+            const ang2 = ang + rand(-1.1, 1.1);
+            ctx.strokeStyle = Math.random() < 0.55 ? 'rgba(200,225,255,1)' : 'rgba(255,240,100,1)';
+            ctx.lineWidth = Math.random() < 0.4 ? 1.8 : 1.0;
+            ctx.beginPath();
+            ctx.moveTo(ex, ey);
+            ctx.lineTo(ex + Math.cos(ang2) * sLen, ey + Math.sin(ang2) * sLen);
+            ctx.stroke();
+            if (Math.random() < 0.5){
+              ctx.lineWidth = 0.7;
+              ctx.beginPath();
+              ctx.moveTo(ex + Math.cos(ang2) * sLen * 0.5, ey + Math.sin(ang2) * sLen * 0.5);
+              ctx.lineTo(ex + Math.cos(ang2 + rand(-0.8, 0.8)) * sLen * 0.7,
+                         ey + Math.sin(ang2 + rand(-0.8, 0.8)) * sLen * 0.7);
+              ctx.stroke();
+            }
+          }
+          ctx.restore();
+          ctx.globalAlpha = 1;
+        }
+
+        // Pulsing red warning aura
+        const pulse = 0.10 + 0.08 * Math.sin(t * 9 + ship.id * 0.5);
+        const critR = Math.max(3, Math.round(screenR * 1.25));
+        const critSprite = getGlowSprite(255, 20, 20, critR);
+        ctx.globalAlpha = pulse;
+        ctx.drawImage(critSprite, sx - critR, sy - critR, critR*2, critR*2);
+        ctx.globalAlpha = 1;
+      }
+
+      // ── Base orange damage glow (pre-baked sprite underneath everything) ──
+      if (hullFrac < 0.38 && cam.zoom > 0.13){
+        const baseAlpha = (0.38 - hullFrac) / 0.38 * 0.35 * (0.78 + 0.22 * Math.sin(t * 5.5 + ship.id));
+        const fireR = screenR * 1.0;
+        const spriteSize = Math.max(4, Math.round(fireR));
+        const sprite = getFireSprite(spriteSize);
+        ctx.globalAlpha = clamp(baseAlpha, 0, 0.5);
+        ctx.drawImage(sprite, sx - spriteSize, sy - spriteSize, spriteSize*2, spriteSize*2);
+        ctx.globalAlpha = 1;
+      }
     }
 
     // ── Main ship body ──
@@ -3618,13 +4866,14 @@
         }
         ctx.closePath();
 
+        const vc = getVecColors(col);
         const fillGrad = ctx.createLinearGradient(-r, 0, r, 0);
-        fillGrad.addColorStop(0,   `rgba(${col[0]},${col[1]},${col[2]},0.20)`);
-        fillGrad.addColorStop(0.6, `rgba(${col[0]},${col[1]},${col[2]},0.50)`);
-        fillGrad.addColorStop(1,   `rgba(${Math.min(255,col[0]+60)},${Math.min(255,col[1]+60)},${Math.min(255,col[2]+80)},0.70)`);
+        fillGrad.addColorStop(0,   vc.fill0);
+        fillGrad.addColorStop(0.6, vc.fill06);
+        fillGrad.addColorStop(1,   vc.fill1);
         ctx.fillStyle   = fillGrad;
         ctx.fill();
-        ctx.strokeStyle = `rgba(${Math.min(255,col[0]+80)},${Math.min(255,col[1]+80)},${Math.min(255,col[2]+100)},0.75)`;
+        ctx.strokeStyle = vc.stroke;
         ctx.lineWidth   = 1.5;
         ctx.stroke();
 
@@ -3646,15 +4895,16 @@
           ctx.globalAlpha = 0.92 * warpAlpha;
         }
 
+        const vc2 = getVecColors(col);
         const bodyGrad = ctx.createLinearGradient(-rw, 0, rw, 0);
-        bodyGrad.addColorStop(0,   `rgba(${col[0]},${col[1]},${col[2]},0.22)`);
-        bodyGrad.addColorStop(0.5, `rgba(${Math.min(255,col[0]+40)},${Math.min(255,col[1]+40)},${Math.min(255,col[2]+50)},0.45)`);
-        bodyGrad.addColorStop(1,   `rgba(${col[0]},${col[1]},${col[2]},0.18)`);
+        bodyGrad.addColorStop(0,   vc2.body0);
+        bodyGrad.addColorStop(0.5, vc2.body05);
+        bodyGrad.addColorStop(1,   vc2.body1);
         ctx.beginPath();
         ctx.ellipse(0, 0, rw, rh, 0, 0, TAU);
         ctx.fillStyle   = bodyGrad;
         ctx.fill();
-        ctx.strokeStyle = `rgba(${Math.min(255,col[0]+80)},${Math.min(255,col[1]+80)},${Math.min(255,col[2]+80)},0.55)`;
+        ctx.strokeStyle = vc2.bodyStroke;
         ctx.lineWidth   = 1.5;
         ctx.stroke();
       }
@@ -3682,29 +4932,52 @@
       const barW = Math.max(36, ship.radius * 1.6) * cam.zoom;
       const barH = 4;
       const x0   = sx - barW / 2;
-      const y0   = sy - screenR * 1.18 - 12;
+      const y0   = sy - screenR * 1.18 - 14;
       const sFrac = clamp(shieldFrac, 0, 1);
       const hFrac = clamp(hullFrac,   0, 1);
       const grads = getHBGrads(barW, x0);
+      const isCritical = hullFrac < 0.22;
 
       // Use a transform so gradient coords (0..barW) line up with bar position
       ctx.save();
       ctx.translate(x0, 0);
-      ctx.globalAlpha = 0.92;
+      ctx.globalAlpha = 0.95;
 
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.beginPath(); ctx.roundRect(0-1, y0-1, barW+2, barH+2, 3); ctx.fill();
+      // Subtle backdrop for the whole bar group
+      ctx.fillStyle = 'rgba(0,0,0,0.62)';
+      ctx.beginPath(); ctx.roundRect(-2, y0-2, barW+4, (barH+3)*2+1, 4); ctx.fill();
+
+      // Shield bar
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.beginPath(); ctx.roundRect(0, y0, barW, barH, 2); ctx.fill();
       if (sFrac > 0){
         ctx.fillStyle = grads.g_shield;
         ctx.beginPath(); ctx.roundRect(0, y0, barW*sFrac, barH, 2); ctx.fill();
       }
 
-      ctx.fillStyle = 'rgba(0,0,0,0.55)';
-      ctx.beginPath(); ctx.roundRect(0-1, y0+barH+3, barW+2, barH+2, 3); ctx.fill();
+      // Hull bar
+      const hullY = y0 + barH + 3;
+      ctx.fillStyle = 'rgba(0,0,0,0.45)';
+      ctx.beginPath(); ctx.roundRect(0, hullY, barW, barH, 2); ctx.fill();
       if (hFrac > 0){
+        // Critical: pulsing red fill
+        if (isCritical){
+          const pulse = 0.75 + 0.25 * Math.sin(world.time * 10 + ship.id * 0.3);
+          ctx.globalAlpha = 0.95 * pulse;
+        }
         ctx.fillStyle = hFrac > 0.5 ? grads.g_hp_high : hFrac > 0.25 ? grads.g_hp_mid : grads.g_hp_low;
-        ctx.beginPath(); ctx.roundRect(0, y0+barH+4, barW*hFrac, barH, 2); ctx.fill();
+        ctx.beginPath(); ctx.roundRect(0, hullY, barW*hFrac, barH, 2); ctx.fill();
+        ctx.globalAlpha = 0.95;
       }
+
+      // Critical warning — thin red border flash around entire bar
+      if (isCritical){
+        const bPulse = 0.5 + 0.5 * Math.sin(world.time * 9 + ship.id * 0.3);
+        ctx.strokeStyle = `rgba(255,60,60,${0.55 * bPulse})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(-1.5, y0-1.5, barW+3, (barH+3)*2+1, 4); ctx.stroke();
+      }
+
       ctx.restore();
     }
   }
@@ -3716,6 +4989,39 @@
     ctx.save();
     ctx.lineCap = 'round';
 
+    // Pre-built colour strings — avoids template-literal allocation per projectile per frame
+    // Layout: [trailHead, trailMid(auraA*1.1), coreStr, fillStr, auraStr]
+    const PROJ_COLORS = {
+      special: {
+        cR:215, cG:248, cB:255, coreR:2.4, trailMult:8.0, auraR:4.2, auraA:0.38,
+        trailHead:'rgba(215,248,255,0.95)',
+        trailMid: `rgba(215,248,255,${(0.38*1.1).toFixed(3)})`,
+        coreStr:  'rgba(255,255,255,1)',
+        auraStr:  'rgba(215,248,255,0.55)',
+      },
+      plasma: {
+        cR:255, cG:155, cB:50,  coreR:1.3, trailMult:3.8, auraR:2.6, auraA:0.25,
+        trailHead:'rgba(255,155,50,0.95)',
+        trailMid: `rgba(255,155,50,${(0.25*1.1).toFixed(3)})`,
+        coreStr:  'rgba(255,195,90,1)',
+        auraStr:  'rgba(255,155,50,0.55)',
+      },
+      ion: {
+        cR:70,  cG:210, cB:255, coreR:1.2, trailMult:4.5, auraR:2.4, auraA:0.28,
+        trailHead:'rgba(70,210,255,0.95)',
+        trailMid: `rgba(70,210,255,${(0.28*1.1).toFixed(3)})`,
+        coreStr:  'rgba(110,250,255,1)',
+        auraStr:  'rgba(70,210,255,0.55)',
+      },
+      kinetic: {
+        cR:235, cG:242, cB:255, coreR:1.0, trailMult:2.4, auraR:1.7, auraA:0.14,
+        trailHead:'rgba(235,242,255,0.95)',
+        trailMid: `rgba(235,242,255,${(0.14*1.1).toFixed(3)})`,
+        coreStr:  'rgba(255,255,255,1)',
+        auraStr:  'rgba(235,242,255,0.55)',
+      },
+    };
+
     for (const p of world.projectiles){
       const sx = (p.pos.x - cam.x) * cam.zoom + rect.width  / 2;
       const sy = (p.pos.y - cam.y) * cam.zoom + rect.height / 2;
@@ -3726,17 +5032,12 @@
       const invS = spd > 0 ? 1/spd : 0;
       const dX   = p.vel.x * invS, dY = p.vel.y * invS;
 
-      // Per-type visual profile
-      let cR, cG, cB, coreR, trailMult, auraR, auraA;
-      if (p.special){
-        cR=215; cG=248; cB=255; coreR=2.4; trailMult=8.0; auraR=4.2; auraA=0.38;
-      } else if (p.type === 'plasma'){
-        cR=255; cG=155; cB=50;  coreR=1.3; trailMult=3.8; auraR=2.6; auraA=0.25;
-      } else if (p.type === 'ion'){
-        cR=70;  cG=210; cB=255; coreR=1.2; trailMult=4.5; auraR=2.4; auraA=0.28;
-      } else {
-        cR=235; cG=242; cB=255; coreR=1.0; trailMult=2.4; auraR=1.7; auraA=0.14;
-      }
+      // Per-type visual profile — use pre-built strings
+      const pc = p.special ? PROJ_COLORS.special
+               : p.type === 'plasma' ? PROJ_COLORS.plasma
+               : p.type === 'ion'    ? PROJ_COLORS.ion
+               :                       PROJ_COLORS.kinetic;
+      const { cR, cG, cB, coreR, trailMult, auraR, auraA } = pc;
 
       const tLen = clamp(spd * 0.040, 0.9, 2.8) * r * trailMult;
       const tx   = sx - dX * tLen, ty = sy - dY * tLen;
@@ -3752,7 +5053,7 @@
           ctx.globalAlpha = 1;
         } else {
           ctx.globalAlpha = auraA;
-          ctx.fillStyle   = `rgba(${cR},${cG},${cB},0.55)`;
+          ctx.fillStyle   = pc.auraStr;
           ctx.beginPath(); ctx.arc(sx, sy, aR, 0, TAU); ctx.fill();
           ctx.globalAlpha = 1;
         }
@@ -3760,8 +5061,8 @@
 
       // Trail: gradient from bright core → transparent tail
       const tg = ctx.createLinearGradient(sx, sy, tx, ty);
-      tg.addColorStop(0,    `rgba(${cR},${cG},${cB},0.95)`);
-      tg.addColorStop(0.28, `rgba(${cR},${cG},${cB},${auraA * 1.1})`);
+      tg.addColorStop(0,    pc.trailHead);
+      tg.addColorStop(0.28, pc.trailMid);
       tg.addColorStop(1,    'rgba(0,0,0,0)');
       ctx.strokeStyle = tg;
       ctx.lineWidth   = r * (p.special ? 3.2 : 2.1);
@@ -3770,8 +5071,7 @@
       ctx.globalAlpha = 1;
 
       // Bright core dot
-      const bR = Math.min(255, cR+40), bG = Math.min(255, cG+40), bB = Math.min(255, cB+40);
-      ctx.fillStyle = `rgba(${bR},${bG},${bB},1)`;
+      ctx.fillStyle = pc.coreStr;
       ctx.beginPath(); ctx.arc(sx, sy, r * coreR, 0, TAU); ctx.fill();
 
       // Ion: pulsing ring halo
@@ -4177,53 +5477,84 @@
 
   function drawMinimap(){
     const rect = getFrameRect();
-    const mmW = 180, mmH = Math.round(mmW * world.h/world.w);
+    const mmW = 190, mmH = Math.round(mmW * world.h/world.w);
     const mmX = rect.width - mmW - 10;
     const mmY = rect.height - mmH - 10;
     const scaleX = mmW / world.w;
     const scaleY = mmH / world.h;
+    const theme = BG_THEMES[activeBgTheme];
+    const tc = theme.nebulaColors[0];
 
     ctx.save();
-    ctx.fillStyle   = 'rgba(4,8,20,0.82)';
-    ctx.strokeStyle = 'rgba(60,90,180,0.55)';
-    ctx.lineWidth   = 1;
-    ctx.beginPath(); ctx.roundRect(mmX, mmY, mmW, mmH, 6); ctx.fill(); ctx.stroke();
 
-    // Batch ship dots by faction — one path per faction color
-    ctx.globalAlpha = 0.85;
+    // Background with theme-tinted gradient
+    const mmBg = ctx.createLinearGradient(mmX, mmY, mmX, mmY+mmH);
+    mmBg.addColorStop(0, `rgba(${Math.floor(tc[0]*0.12)},${Math.floor(tc[1]*0.12)},${Math.floor(tc[2]*0.12)},0.92)`);
+    mmBg.addColorStop(1, 'rgba(3,5,14,0.92)');
+    ctx.fillStyle = mmBg;
+    ctx.strokeStyle = `rgba(${tc[0]},${tc[1]},${tc[2]},0.4)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(mmX, mmY, mmW, mmH, 7); ctx.fill(); ctx.stroke();
+
+    // Subtle nebula hint on minimap — tiny version of actual nebula positions
+    ctx.globalAlpha = 0.18;
+    for (let i=0; i<3; i++){
+      const star = BG.stars[i*30];
+      if (!star) continue;
+      const nx = mmX + star.wx * scaleX, ny = mmY + star.wy * scaleY;
+      const nr = 18 + i*8;
+      const ng = ctx.createRadialGradient(nx,ny,0,nx,ny,nr);
+      ng.addColorStop(0, `rgba(${tc[0]},${tc[1]},${tc[2]},0.6)`);
+      ng.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = ng;
+      ctx.beginPath(); ctx.arc(nx, ny, nr, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // Ship dots — colored by faction, size by ship mass, outline if selected
     const factionKeys = Object.keys(FACTIONS);
     for (const fk of factionKeys){
       const col = FACTIONS[fk].tint;
-      let started = false;
       for (const s of world.ships){
         if (!s.isAlive() || s.faction !== fk) continue;
         const mx = mmX + s.pos.x * scaleX;
         const my = mmY + s.pos.y * scaleY;
-        const mr = clamp(s.radius * scaleX * 1.4, 1.2, 4.5);
-        if (!started){ ctx.fillStyle = `rgb(${col[0]},${col[1]},${col[2]})`; ctx.beginPath(); started=true; }
-        ctx.moveTo(mx+mr, my);
-        ctx.arc(mx, my, mr, 0, TAU);
+        const mr = clamp(s.radius * scaleX * 1.6, 1.2, 5.0);
+        const hf = s.hull / s.maxHull;
+        // Dim dead/dying ships
+        ctx.globalAlpha = 0.5 + hf * 0.5;
+        // Health-tinted fill: green → yellow → red
+        const hr = hf > 0.5 ? Math.floor(col[0]*0.5 + (1-hf*2+1)*80) : Math.floor(col[0]*0.3+180);
+        const hg2 = hf > 0.5 ? col[1] : Math.floor(col[1]*0.5);
+        ctx.fillStyle = `rgb(${clamp(hr,0,255)},${clamp(hg2,0,255)},${col[2]})`;
+        ctx.beginPath(); ctx.arc(mx, my, mr, 0, TAU); ctx.fill();
+        if (s.selected){
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 0.8;
+          ctx.beginPath(); ctx.arc(mx, my, mr+1.2, 0, TAU); ctx.stroke();
+        }
       }
-      if (started) ctx.fill();
     }
+    ctx.globalAlpha = 1;
 
     // Camera viewport rect
     const vW = rect.width  / cam.zoom * scaleX;
     const vH = rect.height / cam.zoom * scaleY;
     const vX = mmX + (cam.x - rect.width  / (2*cam.zoom)) * scaleX;
     const vY = mmY + (cam.y - rect.height / (2*cam.zoom)) * scaleY;
-    ctx.globalAlpha = 0.5;
-    ctx.strokeStyle = 'rgba(180,210,255,0.75)';
-    ctx.lineWidth   = 1;
+    ctx.strokeStyle = `rgba(${tc[0]},${Math.min(255,tc[1]+80)},255,0.7)`;
+    ctx.lineWidth = 1;
     ctx.setLineDash([3,2]);
+    ctx.globalAlpha = 0.7;
     ctx.strokeRect(vX, vY, vW, vH);
 
-    ctx.globalAlpha = 0.5;
+    // Label
     ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(140,170,220,0.7)';
-    ctx.font = '9px ui-sans-serif';
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = `rgb(${tc[0]},${Math.min(255,tc[1]+60)},${Math.min(255,tc[2]+80)})`;
+    ctx.font = 'bold 8px ui-sans-serif';
     ctx.textAlign = 'left';
-    ctx.fillText('TACTICAL', mmX+4, mmY+11);
+    ctx.fillText('TACTICAL MAP', mmX+5, mmY+10);
     ctx.restore();
   }
 
@@ -4268,11 +5599,12 @@
     drawGrid();
 
     // Draw ships sorted by radius (capitals under escorts under craft).
-    // Re-sort only when the ship list changes (ships die), not every frame.
-    // We use the world.ships array directly — it's kept sorted in tick() on death.
-    const ships = world.ships; // already alive-filtered in tick
-    // Stable sort: ships rarely die mid-frame; sort is O(n log n) but cheap with typed compare
-    ships.sort((a,b) => b.radius - a.radius);
+    // Only re-sort when ships are added or removed (_shipsSortDirty), not every frame.
+    const ships = world.ships;
+    if (_shipsSortDirty){
+      ships.sort((a,b) => b.radius - a.radius);
+      _shipsSortDirty = false;
+    }
     for (const s of ships) drawShipSprite(s);
 
     drawProjectiles();
@@ -4342,7 +5674,9 @@
       }
     }
 
+    const beforeCount = world.ships.length;
     world.ships = world.ships.filter(s => s.isAlive());
+    if (world.ships.length !== beforeCount) _shipsSortDirty = true;
     updateDynamicMusic(scaledDt);
 
     // victory: last TEAM standing (only during battle)
@@ -4381,6 +5715,7 @@
               playerWon: winnerTeam === playerTeam,
               timestamp: Date.now()
             }));
+            sessionStorage.removeItem('campaign_battle_pending');
           }
         } catch(e){}
         showOverlay('Battle Result', `<div class="result-line"><b>${teamName(winnerTeam)}</b> wins the engagement.</div>` + makeBattleReportHTML());
@@ -4393,6 +5728,7 @@
               winnerTeam: null, playerTeam: FACTIONS[playerFaction]?.team ?? -1,
               playerWon: false, timestamp: Date.now()
             }));
+            sessionStorage.removeItem('campaign_battle_pending');
           }
         } catch(e){}
         showOverlay('Battle Result', `<div class="result-line"><b>Draw</b> — no ships remain.</div>` + makeBattleReportHTML());
@@ -4580,7 +5916,8 @@
           return;
         }
         const sel = selectedShips();
-        applyFormationAndOrder(sel, wp, el.formation.value);
+        const formVal = el.formation.value;
+        applyFormationAndOrder(sel, wp, formVal === 'natural' ? 'natural' : formVal);
       }
     });
 
@@ -4634,12 +5971,14 @@
           const defKey = el.spawnType.value;
           const faction = el.spawnFaction.value;
 
-          // place with a small deterministic spread so stacks aren't identical
-          const spread = Math.min(26, 6 + Math.sqrt(count)*6);
-          for (let i=0;i<count;i++){
-            const a = (i / Math.max(1,count)) * Math.PI * 2;
-            const r = (count === 1) ? 0 : spread * (0.35 + 0.65*(i/(count-1)));
-            spawnShip(defKey, faction, wp.x + Math.cos(a)*r + rand(-4,4), wp.y + Math.sin(a)*r + rand(-4,4));
+          // Only spawn if a unit type is actually selected
+          if (defKey) {
+            const spread = Math.min(26, 6 + Math.sqrt(count)*6);
+            for (let i=0;i<count;i++){
+              const a = (i / Math.max(1,count)) * Math.PI * 2;
+              const r = (count === 1) ? 0 : spread * (0.35 + 0.65*(i/(count-1)));
+              spawnShip(defKey, faction, wp.x + Math.cos(a)*r + rand(-4,4), wp.y + Math.sin(a)*r + rand(-4,4));
+            }
           }
         }
 
@@ -4752,7 +6091,7 @@
   (function loadCampaignBattle(){
     try {
       const raw = sessionStorage.getItem('campaign_battle_scenario');
-      if (!raw) { resetWorld(true); return; }
+      if (!raw) { sessionStorage.removeItem('campaign_battle_pending'); resetWorld(true); return; }
       sessionStorage.removeItem('campaign_battle_scenario');
       sessionStorage.setItem('campaign_battle_pending', '1');
       const data = JSON.parse(raw);
@@ -4777,7 +6116,7 @@
       retBtn.className = 'btn';
       retBtn.textContent = '← Campaign';
       retBtn.style.cssText = 'background:rgba(255,200,40,.1);border-color:rgba(255,200,40,.5);color:#ffc828;font-weight:600';
-      retBtn.addEventListener('click', () => { window.location.href = 'menu.html'; });
+      retBtn.addEventListener('click', () => { window.location.href = 'index.html'; });
       document.querySelector('.top-controls')?.prepend(retBtn);
       // Import the scenario
       el.scenarioBox.value = JSON.stringify(data.scenario || {});

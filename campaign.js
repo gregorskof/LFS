@@ -10,7 +10,9 @@ const CF = {
   ngr:      { name:'New Grand Republic',  color:'#7adaff', tint:'rgba(120,220,255,' },
   empire:   { name:'Grand Empire',        color:'#ff4a4a', tint:'rgba(235,72,72,'  },
   remnant:  { name:'Imperial Remnant',    color:'#a81a1a', tint:'rgba(140,25,25,'  },
-  fsa:      { name:'Five Star Alignment', color:'#ffd228', tint:'rgba(255,210,40,' },
+  fsa:      { name:'Five Star Alignment',    color:'#ffd228', tint:'rgba(255,210,40,' },
+  rebel:    { name:'Rebel Coalition',         color:'#ff9933', tint:'rgba(255,153,51,' },
+  earth:    { name:'United Earth Federation', color:'#33cc77', tint:'rgba(51,204,119,'  },
 };
 
 // ── Ship pool definitions (what units each faction can field per planet conquered) ─
@@ -78,10 +80,181 @@ const FLEET_POOLS = {
     {k:'fsa_fighter',       role:'craft',   pw:1},
     {k:'fsa_bomber',        role:'craft',   pw:1},
   ],
+  rebel: [
+    {k:'rebel_command_cruiser',  role:'capital', pw:10, rare:true},
+    {k:'rebel_frigate',          role:'escort',  pw:6},
+    {k:'rebel_gunship',          role:'screen',  pw:4},
+    {k:'rebel_blockade_runner',  role:'strike',  pw:3},
+    {k:'rebel_corvette',         role:'strike',  pw:2},
+    {k:'patrol',                 role:'strike',  pw:1},
+    {k:'rebel_fighter',          role:'craft',   pw:1},
+    {k:'rebel_bomber',           role:'craft',   pw:1},
+    {k:'rebel_interceptor',      role:'craft',   pw:1},
+  ],
+  earth: [
+    {k:'uef_orbital_fortress',   role:'station', pw:22, rare:true},
+    {k:'uef_dreadnought',        role:'capital', pw:16, rare:true},
+    {k:'uef_titan_carrier',      role:'carrier', pw:14, rare:true},
+    {k:'uef_battlecruiser',      role:'capital', pw:11},
+    {k:'uef_assault_cruiser',    role:'escort',  pw:8},
+    {k:'uef_escort_frigate',     role:'escort',  pw:6},
+    {k:'uef_destroyer',          role:'screen',  pw:4},
+    {k:'uef_corvette',           role:'strike',  pw:2},
+    {k:'uef_stealth_scout',      role:'strike',  pw:2},
+    {k:'uef_fighter',            role:'craft',   pw:1},
+    {k:'uef_bomber',             role:'craft',   pw:1},
+    {k:'uef_interceptor',        role:'craft',   pw:1},
+    {k:'uef_drone',              role:'craft',   pw:1},
+  ],
 };
 
 // ── Campaign definitions ───────────────────────────────────────────────
 const CAMPAIGNS_DATA = [
+  // ══════════════════════════════════════════════════════════
+  // HISTORY
+  // ══════════════════════════════════════════════════════════
+  {
+    id: 'h1',
+    era: 'Ancient Era — Before the Republic',
+    period: '~500 BGR — ~480 BGR',
+    name: 'The Interplanetary Wars',
+    description: 'Civilisation tears itself apart. Command one of the warring planetary nations in the final brutal years of the Interplanetary Wars — the catastrophe that will eventually forge the Grand Republic from exhaustion and ruin.',
+    difficulty: 'Medium',
+    planets: 20,
+    startingPlanets: 8,
+    objective: 'Eliminate all rival planetary factions.',
+    factionPills: [
+      {role:'You', name:'Rebel Coalition', color:'#ff9933'},
+      {role:'Enemy', name:'Grand Republic', color:'#3a7aff'},
+    ],
+    playerFaction: 'rebel',
+    factions: {
+      rebel:   { team:1, role:'player', startPlanets:8,  ai:false },
+      republic:{ team:2, role:'enemy',  startPlanets:12, ai:true  },
+    },
+    restrictions: {
+      rebel:   { max_rebel_command_cruiser:2 },
+      republic:{ max_air_station:1, max_rep_dread:1 },
+    },
+    aiAggressiveness: { republic:0.55 },
+    winCondition: 'eliminate_faction', winTarget: 'republic',
+    neutralFactions: [],
+  },
+  {
+    id: 'h2',
+    era: 'Republic Era — Rise and Slow Decay',
+    period: '80 BGR — 21 BGR',
+    name: 'The Outer Rebellion',
+    description: 'The Grand Republic has grown fat and corrupt. You command the Rebel Coalition rising from the outer worlds — outgunned, outmanned, but not outmatched. Survive, expand, and prove the Republic can be broken.',
+    difficulty: 'Hard',
+    planets: 30,
+    startingPlanets: 6,
+    objective: 'Capture the Republic capital and break their fleet.',
+    factionPills: [
+      {role:'You', name:'Rebel Coalition', color:'#ff9933'},
+      {role:'Enemy', name:'Grand Republic', color:'#3a7aff'},
+    ],
+    playerFaction: 'rebel',
+    factions: {
+      rebel:   { team:1, role:'player', startPlanets:6,  ai:false },
+      republic:{ team:2, role:'enemy',  startPlanets:24, ai:true  },
+    },
+    restrictions: {
+      rebel:   { max_rebel_command_cruiser:3 },
+      republic:{ max_air_station:1, max_rep_dread:1 },
+    },
+    aiAggressiveness: { republic:0.70 },
+    winCondition: 'eliminate_faction', winTarget: 'republic',
+    neutralFactions: [],
+  },
+  // ══════════════════════════════════════════════════════════
+  // LEGENDS
+  // ══════════════════════════════════════════════════════════
+  {
+    id: 'l1',
+    era: 'Legend — Before the Great Fall',
+    period: '11 BGR — 10 BGR',
+    name: 'First Contact',
+    description: 'The Grand Republic has detected an anomalous portal leading to a different reality — our solar system. CSN stealth destroyers have been secretly mining asteroids there, invisible to Earth. Crush the operation before it can be reported.',
+    difficulty: 'Easy',
+    planets: 12,
+    startingPlanets: 7,
+    objective: 'Destroy all CSN forces in the solar system.',
+    factionPills: [
+      {role:'You', name:'Grand Republic', color:'#3a7aff'},
+      {role:'Enemy', name:'CSN', color:'#6bcfff'},
+    ],
+    playerFaction: 'republic',
+    factions: {
+      republic:{ team:1, role:'player', startPlanets:7, ai:false },
+      csn:     { team:2, role:'enemy',  startPlanets:5, ai:true  },
+    },
+    restrictions: {
+      republic:{ max_air_station:1, max_rep_dread:1 },
+      csn:     { max_csn_sovereign:1 },
+    },
+    aiAggressiveness: { csn:0.40 },
+    winCondition: 'eliminate_faction', winTarget: 'csn',
+    neutralFactions: [],
+  },
+  {
+    id: 'l2',
+    era: 'Legend — After the Great Fall',
+    period: '5 AGR — 6 AGR',
+    name: 'Imperial Folly',
+    description: 'The Grand Empire has forced the dimensional portal open again and sent a fleet to conquer Earth. Their admirals see a primitive world ripe for conquest. They are wrong. You command the Empire — stop the Earth counter-attack before it destroys your invasion force.',
+    difficulty: 'Medium',
+    planets: 12,
+    startingPlanets: 5,
+    objective: 'Defeat the Earth Federation and hold your planets.',
+    factionPills: [
+      {role:'You', name:'Grand Empire', color:'#ff4a4a'},
+      {role:'Enemy', name:'United Earth Federation', color:'#33cc77'},
+    ],
+    playerFaction: 'empire',
+    factions: {
+      empire:{ team:1, role:'player', startPlanets:5, ai:false },
+      earth: { team:2, role:'enemy',  startPlanets:7, ai:true  },
+    },
+    restrictions: {
+      empire:{ max_air_station:1 },
+      earth: { max_uef_orbital_fortress:1, max_uef_dreadnought:1, max_uef_titan_carrier:1 },
+    },
+    aiAggressiveness: { earth:0.75 },
+    winCondition: 'eliminate_faction', winTarget: 'earth',
+    neutralFactions: [],
+  },
+  {
+    id: 'l3',
+    era: 'Legend — The Far Future',
+    period: '~70 AGR',
+    name: 'The Earth Remembers',
+    description: 'The United Earth Federation has spent 30 years building a fleet from Republic blueprints. Now they force the portal open and send a vanguard through. Intercept and destroy them before they can report back.',
+    difficulty: 'Hard',
+    planets: 15,
+    startingPlanets: 10,
+    objective: 'Destroy the Earth Federation vanguard fleet.',
+    factionPills: [
+      {role:'You', name:'CSN', color:'#6bcfff'},
+      {role:'Ally', name:'Rebel Coalition', color:'#ff9933'},
+      {role:'Enemy', name:'United Earth Federation', color:'#33cc77'},
+    ],
+    playerFaction: 'csn',
+    factions: {
+      csn:  { team:1, role:'player', startPlanets:10, ai:false },
+      earth:{ team:2, role:'enemy',  startPlanets:5,  ai:true  },
+    },
+    restrictions: {
+      csn:  { max_csn_sovereign:3 },
+      earth:{ max_uef_orbital_fortress:1, max_uef_dreadnought:2, max_uef_titan_carrier:1 },
+    },
+    aiAggressiveness: { earth:0.80 },
+    winCondition: 'eliminate_faction', winTarget: 'earth',
+    neutralFactions: [],
+  },
+  // ══════════════════════════════════════════════════════════
+  // MAIN CAMPAIGNS
+  // ══════════════════════════════════════════════════════════
   {
     id: 'c1',
     era: 'Before the Great Fall',
@@ -122,6 +295,7 @@ const CAMPAIGNS_DATA = [
     factionPills: [
       {role:'You', name:'CSN', color:'#6bcfff'},
       {role:'Ally', name:'New Grand Republic', color:'#7adaff'},
+      {role:'Ally', name:'Rebel Coalition', color:'#ff9933'},
       {role:'Enemy', name:'Grand Empire', color:'#ff4a4a'},
       {role:'Neutral', name:'Five Star Alignment', color:'#ffd228'},
     ],
@@ -129,15 +303,17 @@ const CAMPAIGNS_DATA = [
     factions: {
       csn:    { team:2, role:'player',  startPlanets:13, ai:false },
       ngr:    { team:2, role:'ally',    startPlanets:2,  ai:true  },
+      rebel:  { team:2, role:'ally',    startPlanets:2,  ai:true  },
       empire: { team:3, role:'enemy',   startPlanets:10, ai:true  },
       fsa:    { team:5, role:'neutral', startPlanets:5,  ai:true  },
     },
     restrictions: {
       empire: { max_air_station:1 },
       csn:    { max_csn_sovereign:2 },
+      rebel:  { max_rebel_command_cruiser:2 },
       fsa:    { max_fsa_capital_station:0 },  // FSA doesn't have the station yet
     },
-    aiAggressiveness: { empire:0.80, ngr:0.55, fsa:0.15 },
+    aiAggressiveness: { empire:0.80, ngr:0.55, rebel:0.60, fsa:0.15 },
     winCondition: 'eliminate_faction', winTarget: 'empire',
     neutralFactions: ['fsa'],
   },
@@ -153,22 +329,25 @@ const CAMPAIGNS_DATA = [
     objective: 'Destroy the Imperial Remnant.',
     factionPills: [
       {role:'You', name:'CSN', color:'#6bcfff'},
+      {role:'Ally', name:'Rebel Coalition', color:'#ff9933'},
       {role:'Enemy', name:'Imperial Remnant', color:'#a81a1a'},
       {role:'Neutral', name:'Five Star Alignment', color:'#ffd228'},
     ],
     playerFaction: 'csn',
     factions: {
       csn:     { team:2, role:'player',  startPlanets:25, ai:false },
+      rebel:   { team:2, role:'ally',    startPlanets:3,  ai:true  },
       remnant: { team:3, role:'enemy',   startPlanets:5,  ai:true  },
       fsa:     { team:5, role:'neutral', startPlanets:5,  ai:true  },
     },
     restrictions: {
       remnant: { max_remnant_mothership:1 },
       csn:     { max_csn_sovereign:4 },
+      rebel:   { max_rebel_command_cruiser:2 },
       fsa:     { max_fsa_capital_station:1 },
     },
     unknownRegion: true,
-    aiAggressiveness: { remnant:0.75, fsa:0.20 },
+    aiAggressiveness: { remnant:0.75, rebel:0.65, fsa:0.20 },
     winCondition: 'eliminate_faction', winTarget: 'remnant',
     neutralFactions: ['fsa'],
   },
@@ -184,19 +363,51 @@ const CAMPAIGNS_DATA = [
     objective: 'Destroy the Five Star Alignment.',
     factionPills: [
       {role:'You', name:'CSN', color:'#6bcfff'},
+      {role:'Ally', name:'Rebel Coalition', color:'#ff9933'},
       {role:'Enemy', name:'Five Star Alignment', color:'#ffd228'},
     ],
     playerFaction: 'csn',
     factions: {
-      csn: { team:2, role:'player', startPlanets:10, ai:false },
-      fsa: { team:5, role:'enemy',  startPlanets:5,  ai:true  },
+      csn:   { team:2, role:'player', startPlanets:10, ai:false },
+      rebel: { team:2, role:'ally',   startPlanets:2,  ai:true  },
+      fsa:   { team:5, role:'enemy',  startPlanets:5,  ai:true  },
     },
     restrictions: {
-      csn: { max_csn_sovereign:3 },
-      fsa: { max_fsa_capital_station:1 },
+      csn:   { max_csn_sovereign:3 },
+      rebel: { max_rebel_command_cruiser:1 },
+      fsa:   { max_fsa_capital_station:1 },
     },
-    aiAggressiveness: { fsa:0.65 },
+    aiAggressiveness: { rebel:0.65, fsa:0.65 },
     winCondition: 'eliminate_faction', winTarget: 'fsa',
+    neutralFactions: [],
+  },
+  {
+    id: 'c5',
+    era: 'The Far Future',
+    period: '70 AGR — 74 AGR',
+    name: 'The Last Armada',
+    description: 'The United Earth Federation has invaded CSN space through a manually opened dimensional portal. Their fleet is the largest ever seen from another reality — disciplined, technologically sophisticated, and relentless. The CSN must fight for survival across its core worlds. Victory is possible. It will not come cheaply.',
+    difficulty: 'Hard',
+    planets: 35,
+    startingPlanets: 20,
+    objective: 'Destroy the Earth Federation fleet and seal the portal forever.',
+    factionPills: [
+      {role:'You', name:'CSN', color:'#6bcfff'},
+      {role:'Enemy', name:'United Earth Federation', color:'#33cc77'},
+    ],
+    playerFaction: 'csn',
+    factions: {
+      csn:   { team:1, role:'player', startPlanets:20, ai:false },
+      rebel: { team:1, role:'ally',   startPlanets:4,  ai:true  },
+      earth: { team:2, role:'enemy',  startPlanets:15, ai:true  },
+    },
+    restrictions: {
+      csn:   { max_csn_sovereign:4 },
+      rebel: { max_rebel_command_cruiser:3 },
+      earth: { max_uef_orbital_fortress:2, max_uef_dreadnought:3, max_uef_titan_carrier:2 },
+    },
+    aiAggressiveness: { rebel:0.75, earth:0.85 },
+    winCondition: 'eliminate_faction', winTarget: 'earth',
     neutralFactions: [],
   },
 ];

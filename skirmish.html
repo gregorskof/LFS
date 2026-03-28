@@ -213,7 +213,7 @@ select option   { color:#e8eefc; background:#0c1528; padding:3px 6px; font-size:
 <main class="layout">
   <aside class="panel">
     <section class="section">
-      <h2>Spawn</h2>
+      <h2>⚔️ Spawn Unit</h2>
       <div class="row">
         <label>Player</label>
         <select id="playerFaction">
@@ -224,6 +224,10 @@ select option   { color:#e8eefc; background:#0c1528; padding:3px 6px; font-size:
           <option value="ngr">New Grand Republic</option>
           <option value="starwars">Star Wars</option>
           <option value="fsa">Five Star Alignment</option>
+          <option value="rebel">Rebel Coalition</option>
+          <option value="earth">United Earth Federation</option>
+          <option value="ece">21st Century Earth</option>
+          <option value="unoc">United Nations Orbital Command</option>
         </select>
       </div>
       <div class="row">
@@ -236,48 +240,73 @@ select option   { color:#e8eefc; background:#0c1528; padding:3px 6px; font-size:
           <option value="ngr">New Grand Republic</option>
           <option value="starwars">Star Wars</option>
           <option value="fsa">Five Star Alignment</option>
+          <option value="rebel">Rebel Coalition</option>
+          <option value="earth">United Earth Federation</option>
+          <option value="ece">21st Century Earth</option>
+          <option value="unoc">United Nations Orbital Command</option>
         </select>
       </div>
-      <div class="row">
-        <label>Unit</label>
-        <select id="spawnType"></select>
+      <div class="row" style="grid-template-columns:1fr;margin-bottom:6px;">
+        <!-- hidden real select kept for game.js compatibility -->
+        <select id="spawnType" style="display:none"></select>
+        <!-- visual picker (populated by JS below) -->
+        <div id="unitPickerWrap">
+          <button id="unitPickerBtn" type="button">
+            <span class="upb-noimg">🛸</span>
+            <span class="upb-name">Select a unit…</span>
+            <span class="upb-role"></span>
+            <span class="upb-chevron">▼</span>
+          </button>
+          <div id="unitPickerDropdown"></div>
+        </div>
       </div>
       <div class="row">
         <label>Count</label>
         <input id="spawnCount" type="number" min="1" max="50" value="1"/>
       </div>
-      <div class="note">Click empty space to place. <b>Shift</b>+Click forces placement. Hover ship for full weapon &amp; hangar specs.</div>
+      <div class="note">Click empty space to place · <b>Shift</b>+Click forces placement · Hover ship for specs</div>
     </section>
     <section class="section">
-      <h2>Selection</h2>
+      <h2>🎮 Selection &amp; Orders</h2>
       <div class="row">
         <label>Formation</label>
         <select id="formation">
-          <option value="line">Line (Vertical)</option>
-          <option value="line_h">Line (Horizontal)</option>
-          <option value="wedge">Wedge</option>
-          <option value="ring">Ring</option>
-          <option value="wall">Wall</option>
-          <option value="echelon">Echelon</option>
+          <option value="natural" selected>🌐 Natural (Default)</option>
+          <option value="line">↕ Line (Vertical)</option>
+          <option value="line_h">↔ Line (Horizontal)</option>
+          <option value="wedge">△ Wedge</option>
+          <option value="ring">◎ Ring</option>
+          <option value="wall">▬ Wall</option>
+          <option value="echelon">╱ Echelon</option>
         </select>
       </div>
-      <div class="row">
-        <label>Rules</label>
-        <div class="toggles">
-          <button id="btnHold" class="btn">Hold Fire (H)</button>
-          <button id="btnFree" class="btn">Free Fire (F)</button>
-        </div>
-      </div>
-      <div class="row">
-        <label>Tools</label>
-        <div class="toggles">
-          <button id="btnDelete" class="btn btn-danger">Delete (Del)</button>
-          <button id="btnDeselect" class="btn">Deselect (Esc)</button>
-        </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;">
+        <button id="btnHold" class="btn" title="Hold Fire (H)" style="font-size:11px;padding:7px 6px;">🚫 Hold Fire <span style="color:rgba(255,255,255,.35);font-size:10px">(H)</span></button>
+        <button id="btnFree" class="btn btn-good" title="Free Fire (F)" style="font-size:11px;padding:7px 6px;">🎯 Free Fire <span style="color:rgba(255,255,255,.35);font-size:10px">(F)</span></button>
+        <button id="btnRepair" class="btn btn-good" title="Repair selected (R)" style="font-size:11px;padding:7px 6px;">🔧 Repair <span style="color:rgba(255,255,255,.35);font-size:10px">(R)</span></button>
+        <button id="btnScatter" class="btn" title="Scatter/evasive (E)" style="font-size:11px;padding:7px 6px;">💨 Scatter <span style="color:rgba(255,255,255,.35);font-size:10px">(E)</span></button>
+        <button id="btnRecall" class="btn" title="Recall craft (C)" style="font-size:11px;padding:7px 6px;">↩ Recall <span style="color:rgba(255,255,255,.35);font-size:10px">(C)</span></button>
+        <button id="btnSelectAll" class="btn" title="Select all friendly (Ctrl+A)" style="font-size:11px;padding:7px 6px;">☑ All Ships</button>
+        <button id="btnFocusCam" class="btn" title="Focus camera (G)" style="font-size:11px;padding:7px 6px;">📍 Focus Cam <span style="color:rgba(255,255,255,.35);font-size:10px">(G)</span></button>
+        <button id="btnDeselect" class="btn" style="font-size:11px;padding:7px 6px;">✗ Deselect <span style="color:rgba(255,255,255,.35);font-size:10px">(Esc)</span></button>
+        <button id="btnDelete" class="btn btn-danger" title="Delete selected (Del)" style="font-size:11px;padding:7px 6px;grid-column:span 2;">🗑 Delete Selected <span style="color:rgba(255,100,110,.45);font-size:10px">(Del)</span></button>
       </div>
     </section>
     <section class="section">
-      <h2>Scenario</h2>
+      <h2>🌌 Background</h2>
+      <div id="bgPicker" style="display:grid;grid-template-columns:1fr 1fr;gap:5px;">
+        <button class="bg-btn active" data-bg="deepspace" style="padding:7px 6px;border-radius:8px;border:1px solid rgba(90,150,255,.5);background:rgba(4,7,18,.8);color:#aac4ee;font-size:11px;cursor:pointer;font-family:inherit;transition:.15s;">🌑 Deep Space</button>
+        <button class="bg-btn" data-bg="nebula" style="padding:7px 6px;border-radius:8px;border:1px solid rgba(40,20,90,.5);background:rgba(18,4,40,.8);color:#cc99ff;font-size:11px;cursor:pointer;font-family:inherit;transition:.15s;">🟣 Nebula Storm</button>
+        <button class="bg-btn" data-bg="redgiant" style="padding:7px 6px;border-radius:8px;border:1px solid rgba(180,50,20,.4);background:rgba(30,6,4,.8);color:#ff9966;font-size:11px;cursor:pointer;font-family:inherit;transition:.15s;">🔴 Red Giant</button>
+        <button class="bg-btn" data-bg="bluedwarf" style="padding:7px 6px;border-radius:8px;border:1px solid rgba(20,80,200,.5);background:rgba(2,8,30,.8);color:#66aaff;font-size:11px;cursor:pointer;font-family:inherit;transition:.15s;">🔵 Blue Dwarf</button>
+        <button class="bg-btn" data-bg="supernova" style="padding:7px 6px;border-radius:8px;border:1px solid rgba(255,180,20,.4);background:rgba(28,16,2,.8);color:#ffdd88;font-size:11px;cursor:pointer;font-family:inherit;transition:.15s;">💥 Supernova</button>
+        <button class="bg-btn" data-bg="voidrift" style="padding:7px 6px;border-radius:8px;border:1px solid rgba(20,180,140,.4);background:rgba(2,18,16,.8);color:#44ddbb;font-size:11px;cursor:pointer;font-family:inherit;transition:.15s;">🌀 Void Rift</button>
+        <button class="bg-btn" data-bg="ashfield" style="padding:7px 6px;border-radius:8px;border:1px solid rgba(100,80,60,.4);background:rgba(12,10,8,.8);color:#bbaa88;font-size:11px;cursor:pointer;font-family:inherit;transition:.15s;">🌫️ Ash Field</button>
+        <button class="bg-btn" data-bg="goldcluster" style="padding:7px 6px;border-radius:8px;border:1px solid rgba(200,160,30,.4);background:rgba(22,16,2,.8);color:#ffcc55;font-size:11px;cursor:pointer;font-family:inherit;transition:.15s;">✨ Gold Cluster</button>
+      </div>
+    </section>
+    <section class="section">
+      <h2>📋 Scenario</h2>
       <div class="row">
         <button id="btnExport" class="btn">Export JSON</button>
         <button id="btnImport" class="btn">Import JSON</button>
@@ -921,6 +950,227 @@ function renderRoster(){
   });
 }
 
+})();
+</script>
+
+<!-- ═══════════════ VISUAL UNIT PICKER ═══════════════════ -->
+<script>
+(function(){
+'use strict';
+
+const btn  = document.getElementById('unitPickerBtn');
+const drop = document.getElementById('unitPickerDropdown');
+const real = document.getElementById('spawnType');
+if (!btn || !drop || !real) return;
+
+// power score helper (mirrors Ship Docs)
+function ps(def){
+  if (!def) return 0;
+  const MULT={ion:1.0,plasma:1.15,kinetic:0.8};
+  let dps=0;
+  for(const w of (def.weapons||[])){
+    const boost=(w.pierceShields||w.breachShields)?1.55:1;
+    dps+=(w.dmg/w.cooldown)*(MULT[w.type]||1)*boost*(w.usesMax?0.4:1);
+  }
+  const ehp=(def.shields||0)*1.2+(def.hull||0);
+  return Math.round(ehp*0.018+dps*12+Math.min((def.speed||0)*0.8,120)+Math.log10((def.mass||1)+10)*38);
+}
+function psColor(score,max){
+  const f=score/(max||1);
+  return f>0.8?'#ff5b5b':f>0.6?'#ff9944':f>0.4?'#ffcc33':f>0.2?'#3ddc97':'#5aa7ff';
+}
+function imgSrc(def){
+  const D=window.SHIP_DOCS;
+  if(D&&def.spriteKey&&D.assets&&D.assets[def.spriteKey]) return encodeURI(D.assets[def.spriteKey]);
+  return '';
+}
+
+const ROLE_ORDER=['station','capital','carrier','escort','screen','strike','craft'];
+const ROLE_LABELS={station:'🏛 Stations',capital:'⚔️ Capital Ships',carrier:'🚀 Carriers',
+  escort:'🛡 Cruisers / Escorts',screen:'⚡ Destroyers',strike:'🎯 Corvettes / Strike',craft:'✈️ Craft'};
+
+let selectedKey = '';
+
+function buildDropdown(){
+  drop.innerHTML='';
+  const D=window.SHIP_DOCS;
+  if(!D){ drop.innerHTML='<div style="padding:12px;font-size:11px;color:#445566">Loading…</div>'; return; }
+
+  const faction=document.getElementById('spawnFaction')?.value||'republic';
+  const allowed=D.loadouts[faction]||[];
+  const allDefs=allowed.map(k=>D.units.find(u=>u.key===k)).filter(Boolean);
+  const allScores=allDefs.map(d=>ps(d));
+  const maxS=Math.max(...allScores,1);
+
+  // ── "None / Deselect" row at the top ──
+  const noneItem=document.createElement('div');
+  noneItem.className='up-item up-none'+(selectedKey===''?' selected':'');
+  noneItem.dataset.key='';
+  noneItem.innerHTML=`
+    <div class="up-item-noimg" style="opacity:.35">🚫</div>
+    <div class="up-item-info">
+      <div class="up-item-name" style="color:var(--muted);font-weight:500">No unit selected</div>
+      <div class="up-item-meta"><span>Click to deselect — won't spawn anything</span></div>
+    </div>`;
+  noneItem.addEventListener('click',()=>{ deselectUnit(); closeDrop(); });
+  drop.appendChild(noneItem);
+
+  const groups={};
+  for(const d of allDefs){
+    const r=d.role||'craft';
+    (groups[r]=groups[r]||[]).push(d);
+  }
+
+  for(const role of ROLE_ORDER){
+    const defs=groups[role];
+    if(!defs||!defs.length) continue;
+    const gl=document.createElement('div');
+    gl.className='up-group-label';
+    gl.textContent=ROLE_LABELS[role]||role;
+    drop.appendChild(gl);
+
+    for(const d of defs){
+      const score=ps(d);
+      const pc=psColor(score,maxS);
+      const src=imgSrc(d);
+
+      const item=document.createElement('div');
+      item.className='up-item'+(d.key===selectedKey?' selected':'');
+      item.dataset.key=d.key;
+
+      const imgPart=src
+        ?`<img class="up-item-img" src="${src}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+           <div class="up-item-noimg" style="display:none">🛸</div>`
+        :`<div class="up-item-noimg">🛸</div>`;
+
+      item.innerHTML=`${imgPart}
+        <div class="up-item-info">
+          <div class="up-item-name">${d.name}</div>
+          <div class="up-item-meta">
+            <span>${d.role}${d.craft?' · '+d.craft:''}</span>
+            ${d.hull?`<span style="color:#5577aa">hull ${d.hull}</span>`:''}
+          </div>
+        </div>
+        <span class="up-item-ps" style="color:${pc}">${score}</span>`;
+
+      item.addEventListener('click',()=>{
+        selectUnit(d.key, d.name, d.role+(d.craft?' · '+d.craft:''), src);
+        closeDrop();
+      });
+      drop.appendChild(item);
+    }
+  }
+
+  // Sync selected display after rebuild
+  if(selectedKey){
+    const def=allDefs.find(d=>d.key===selectedKey);
+    if(def) updateBtnDisplay(def.key,def.name,def.role+(def.craft?' · '+def.craft:''),imgSrc(def));
+    else deselectUnit();
+  } else {
+    updateBtnDisplay('','No unit selected','','');
+  }
+}
+
+function deselectUnit(){
+  selectedKey='';
+  real.value='';
+  updateBtnDisplay('','No unit selected','','');
+  drop.querySelectorAll('.up-item').forEach(el=>el.classList.toggle('selected',el.dataset.key===''));
+}
+
+function selectUnit(key,name,role,src){
+  selectedKey=key;
+  for(const opt of real.options){ if(opt.value===key){real.value=key;break;} }
+  updateBtnDisplay(key,name,role,src);
+  drop.querySelectorAll('.up-item').forEach(el=>el.classList.toggle('selected',el.dataset.key===key));
+}
+
+function updateBtnDisplay(key,name,role,src){
+  const imgWrap=btn.querySelector('.upb-img,.upb-noimg');
+  if(src){
+    if(imgWrap){ imgWrap.outerHTML=`<img class="upb-img" src="${src}" alt="" onerror="this.outerHTML='<span class=upb-noimg>🛸</span>'">`; }
+  } else {
+    if(imgWrap){ imgWrap.outerHTML=`<span class="upb-noimg">${key?'🛸':'🚫'}</span>`; }
+  }
+  btn.querySelector('.upb-name').textContent = name || 'No unit selected';
+  btn.querySelector('.upb-role').textContent = role || '';
+}
+
+function positionDrop(){
+  const r = btn.getBoundingClientRect();
+  const w = r.width;
+  let left = r.left;
+  if (left + w > window.innerWidth - 6) left = window.innerWidth - w - 6;
+  if (left < 6) left = 6;
+  drop.style.left  = left + 'px';
+  drop.style.width = w + 'px';
+  // Always measure actual available space each call
+  const spaceBelow = window.innerHeight - r.bottom - 10;
+  const spaceAbove = r.top - 10;
+  if (spaceBelow >= spaceAbove || spaceBelow >= 150){
+    drop.style.top       = (r.bottom + 4) + 'px';
+    drop.style.bottom    = 'auto';
+    drop.style.maxHeight = Math.max(110, spaceBelow) + 'px';
+  } else {
+    drop.style.top       = 'auto';
+    drop.style.bottom    = (window.innerHeight - r.top + 4) + 'px';
+    drop.style.maxHeight = Math.max(110, spaceAbove) + 'px';
+  }
+}
+
+function openDrop(){
+  buildDropdown();
+  drop.classList.add('open');
+  btn.classList.add('open');
+  positionDrop();
+}
+function closeDrop(){
+  drop.classList.remove('open');
+  btn.classList.remove('open');
+}
+function toggleDrop(){
+  if(drop.classList.contains('open')) closeDrop(); else openDrop();
+}
+
+btn.addEventListener('click',e=>{ e.stopPropagation(); toggleDrop(); });
+document.addEventListener('click',e=>{
+  if(!btn.contains(e.target)&&!drop.contains(e.target)) closeDrop();
+});
+// Keep dropdown anchored when panel scrolls or window resizes
+document.querySelector('.panel')?.addEventListener('scroll', ()=>{ if(drop.classList.contains('open')) positionDrop(); });
+window.addEventListener('resize', ()=>{ if(drop.classList.contains('open')) positionDrop(); });
+
+// Rebuild when faction changes
+document.getElementById('spawnFaction')?.addEventListener('change',()=>{
+  selectedKey='';
+  if(drop.classList.contains('open')) buildDropdown();
+  else { buildDropdown(); closeDrop(); }
+});
+
+// Also rebuild when SHIP_DOCS becomes available (game.js sets it after init)
+let waitTries=0;
+const waitForDocs=setInterval(()=>{
+  if(window.SHIP_DOCS||waitTries++>60){ clearInterval(waitForDocs); buildDropdown(); }
+},250);
+
+// Keep real select in sync when game.js updates it (populateSpawnList)
+const obs=new MutationObserver(()=>{
+  if(!selectedKey) buildDropdown();
+});
+obs.observe(real,{childList:true});
+
+})();
+</script>
+<!-- ═══════════════ BACKGROUND PICKER ════════════════════ -->
+<script>
+(function(){
+  document.getElementById('bgPicker')?.addEventListener('click', e => {
+    const btn = e.target.closest('.bg-btn');
+    if (!btn) return;
+    document.querySelectorAll('.bg-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    if (window.setBattleBackground) window.setBattleBackground(btn.dataset.bg);
+  });
 })();
 </script>
 </body>
